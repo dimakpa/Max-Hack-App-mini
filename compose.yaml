@@ -1,0 +1,87 @@
+name: techzakaz
+
+services:
+  db:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: techzakaz
+      POSTGRES_USER: techzakaz
+      POSTGRES_PASSWORD: techzakaz_local
+    ports:
+      - "5434:5432"
+    volumes:
+      - techzakaz_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U techzakaz -d techzakaz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgres://techzakaz:techzakaz_local@db:5432/techzakaz
+      DEMO_AUTH: ${DEMO_AUTH:-true}
+      FRONTEND_ORIGIN: http://localhost:8080
+      TRUST_PROXY_HOPS: 1
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  bot:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    environment:
+      NODE_ENV: development
+      PORT: 3002
+      DATABASE_URL: postgres://techzakaz:techzakaz_local@db:5432/techzakaz
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:8080}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3001}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3002:3002"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3002/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_DEMO_AUTH: ${DEMO_AUTH:-true}
+        VITE_API_BASE: /api
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  techzakaz_db:

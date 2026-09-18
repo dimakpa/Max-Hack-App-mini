@@ -1,0 +1,51 @@
+import { expect, test } from '@playwright/test';
+
+test('customer to dispatcher to one review', async ({ page, isMobile }) => {
+  test.skip(Boolean(isMobile), 'The full role flow is covered on desktop; mobile has a dedicated responsive check.');
+  await page.goto('/');
+  await page.getByTestId('manual-start').click();
+  await page.getByTestId('category').selectOption('MOBILE_CRANE');
+  await page.getByTestId('scheduled-at').fill('2029-06-18T09:00');
+  await page.getByTestId('duration').fill('8');
+  await page.getByTestId('locality').fill('Чебоксары');
+  await page.getByTestId('work-description').fill('Поднять строительные материалы на второй этаж');
+  await page.getByTestId('find-proposals').click();
+  await expect(page.getByRole('heading', { name: 'Подходящие предложения' })).toBeVisible();
+  await page.getByTestId('select-proposal-0').click();
+  await page.getByTestId('confirm-order').click();
+  await expect(page.getByText('Заявка отправлена', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Открыть мои заявки' }).click();
+  await page.getByTestId('order-NEW').first().click();
+  await expect(page.getByText('Новая', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Закрыть' }).click();
+
+  await page.getByTestId('role-switcher').selectOption('dispatcher-a');
+  await page.getByTestId('order-NEW').first().click();
+  await page.getByTestId('callback-request').click();
+  await expect(page.getByTestId('callback-request')).toBeDisabled();
+  await page.getByRole('button', { name: 'Закрыть' }).click();
+  await page.getByTestId('role-switcher').selectOption('customer');
+  await page.getByRole('button', { name: 'Мои заявки' }).click();
+  await page.getByTestId('order-NEW').first().click();
+  await page.getByTestId('acknowledge-callback').click();
+  await page.getByRole('button', { name: 'Закрыть' }).click();
+  await page.getByTestId('role-switcher').selectOption('dispatcher-a');
+  await page.getByTestId('order-NEW').first().click();
+  await page.getByTestId('confirm-status').click();
+  await page.getByTestId('progress-status').click();
+  await page.getByTestId('open-rollback').click();
+  await page.getByTestId('confirm-rollback').click();
+  await expect(page.getByText('Подтверждена', { exact: true }).first()).toBeVisible();
+  await page.getByTestId('progress-status').click();
+  await page.getByTestId('complete-status').click();
+  await expect(page.getByText('Завершена', { exact: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Закрыть' }).click();
+
+  await page.getByTestId('role-switcher').selectOption('customer');
+  await page.getByRole('button', { name: 'Мои заявки' }).click();
+  await page.getByTestId('order-COMPLETED').first().click();
+  await page.getByTestId('open-review').click();
+  await page.getByTestId('review-text').fill('Работы выполнены аккуратно и вовремя');
+  await page.getByTestId('submit-review').click();
+  await expect(page.getByText('Работы выполнены аккуратно и вовремя')).toBeVisible();
+});

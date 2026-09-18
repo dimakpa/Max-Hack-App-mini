@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.env
+.env.*
+token_max.md
+*token*.md
+qa/screenshots
+playwright-report
+test-results
+*.log
+
