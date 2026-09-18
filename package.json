@@ -10,6 +10,8 @@
     "test:e2e": "playwright test",
     "lint": "npm run lint --workspace backend && npm run lint --workspace bot && npm run lint --workspace frontend",
     "audit:prod": "npm audit --omit=dev",
+    "ai:start": "./scripts/start-local-qwen.sh",
+    "ai:smoke": "node scripts/smoke-local-ai.mjs",
     "db:migrate": "npm run db:migrate --workspace backend",
     "db:seed": "npm run db:seed --workspace backend"
   },

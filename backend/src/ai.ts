@@ -4,19 +4,52 @@ import type { Category, DraftFields } from './types.js';
 
 export interface ParseResult {
   fields: DraftFields;
-  provider: 'mock' | 'ollama';
+  provider: 'mock' | 'ollama' | 'openai_compatible';
   fallback: boolean;
   notice: string | null;
 }
 
 const parsedSchema = z.object({
   category: z.enum(['MOBILE_CRANE', 'TRACTOR', 'DUMP_TRUCK', 'BACKHOE_LOADER']).nullable(),
-  scheduledAt: z.string().datetime().nullable(),
+  scheduledAt: z.string().datetime({ offset: true }).transform((value) => new Date(value).toISOString()).nullable(),
   durationHours: z.number().int().min(1).max(168).nullable(),
   locality: z.string().min(1).max(120).nullable(),
   workDescription: z.string().min(1).max(1000).nullable(),
   constraints: z.string().max(500).nullable()
 });
+
+const openAiResponseSchema = z.object({
+  choices: z.array(z.object({
+    message: z.object({ content: z.string() })
+  })).min(1)
+});
+
+function extractionMessages(text: string): Array<{ role: 'system' | 'user'; content: string }> {
+  return [{
+    role: 'system',
+    content: `Ты преобразуешь заявку на спецтехнику в JSON. Верни ровно один JSON-объект без Markdown и пояснений.
+Допустимые category: MOBILE_CRANE, TRACTOR, DUMP_TRUCK, BACKHOE_LOADER. Неизвестные значения возвращай как null.
+scheduledAt должен быть ISO 8601 с часовым поясом. Текущая дата: ${new Date().toISOString()}, часовой пояс пользователя: Europe/Moscow.
+Поля: category, scheduledAt, durationHours, locality, workDescription, constraints. Не придумывай отсутствующие факты.`
+  }, {
+    role: 'user',
+    content: text
+  }];
+}
+
+export function parseDraftJson(content: string): DraftFields {
+  const trimmed = content.trim();
+  try {
+    return parsedSchema.parse(JSON.parse(trimmed));
+  } catch (firstError) {
+    const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1];
+    if (fenced) return parsedSchema.parse(JSON.parse(fenced));
+    const start = trimmed.indexOf('{');
+    const end = trimmed.lastIndexOf('}');
+    if (start >= 0 && end > start) return parsedSchema.parse(JSON.parse(trimmed.slice(start, end + 1)));
+    throw firstError;
+  }
+}
 
 function detectCategory(text: string): Category | null {
   if (/автокран|кран\b/i.test(text)) return 'MOBILE_CRANE';
@@ -71,7 +104,7 @@ export function parseWithMock(text: string, now = new Date()): DraftFields {
 
 async function parseWithOllama(text: string): Promise<DraftFields> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
+  const timeout = setTimeout(() => controller.abort(), config.AI_TIMEOUT_MS);
   try {
     const response = await fetch(`${config.OLLAMA_URL}/api/chat`, {
       method: 'POST',
@@ -81,15 +114,36 @@ async function parseWithOllama(text: string): Promise<DraftFields> {
         model: config.OLLAMA_MODEL,
         stream: false,
         format: 'json',
-        messages: [{
-          role: 'user',
-          content: `Извлеки только уверенные поля заявки спецтехники. Неизвестное = null. Верни JSON с category (MOBILE_CRANE|TRACTOR|DUMP_TRUCK|BACKHOE_LOADER), scheduledAt ISO, durationHours, locality, workDescription, constraints. Текст: ${text}`
-        }]
+        messages: extractionMessages(text)
       })
     });
     if (!response.ok) throw new Error(`Ollama ${response.status}`);
     const body = await response.json() as { message?: { content?: string } };
-    return parsedSchema.parse(JSON.parse(body.message?.content ?? '{}'));
+    return parseDraftJson(body.message?.content ?? '{}');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function parseWithOpenAiCompatible(text: string): Promise<DraftFields> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.AI_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${config.OPENAI_COMPATIBLE_URL.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: config.OPENAI_COMPATIBLE_MODEL,
+        stream: false,
+        temperature: 0,
+        max_tokens: 500,
+        messages: extractionMessages(text)
+      })
+    });
+    if (!response.ok) throw new Error(`OpenAI-compatible runtime ${response.status}`);
+    const body = openAiResponseSchema.parse(await response.json());
+    return parseDraftJson(body.choices[0]!.message.content);
   } finally {
     clearTimeout(timeout);
   }
@@ -100,7 +154,10 @@ export async function parseRequestText(text: string): Promise<ParseResult> {
     return { fields: parseWithMock(text), provider: 'mock', fallback: false, notice: null };
   }
   try {
-    return { fields: await parseWithOllama(text), provider: 'ollama', fallback: false, notice: null };
+    const fields = config.AI_PROVIDER === 'ollama'
+      ? await parseWithOllama(text)
+      : await parseWithOpenAiCompatible(text);
+    return { fields, provider: config.AI_PROVIDER, fallback: false, notice: null };
   } catch {
     return {
       fields: parseWithMock(text),

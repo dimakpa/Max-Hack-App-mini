@@ -13,6 +13,24 @@ type Flow = 'start' | 'describe' | 'form' | 'proposals' | 'success';
 
 const demoBuild = import.meta.env.VITE_DEMO_AUTH === 'true';
 
+const requestExamples = [
+  {
+    id: 'crane',
+    title: 'Поднять плиты краном',
+    text: 'Нужен автокран 25 тонн в Чебоксарах завтра к 9:00 на 8 часов, узкий въезд на площадку'
+  },
+  {
+    id: 'dump-truck',
+    title: 'Вывезти грунт самосвалом',
+    text: 'Нужен самосвал КамАЗ в Новочебоксарске завтра к 8:00 на смену, вывезти грунт с участка'
+  },
+  {
+    id: 'tractor',
+    title: 'Спланировать участок трактором',
+    text: 'Нужен трактор с отвалом в Чебоксарах завтра к 10:00 на 4 часа, ограниченный проезд во двор'
+  }
+] as const;
+
 function tomorrowLocal(): string {
   const date = new Date();
   date.setDate(date.getDate() + 1);
@@ -132,10 +150,10 @@ function NewRequest({ meta, onCreated, notify }: { meta: Meta; onCreated: () => 
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
-  const parse = async () => {
+  const parse = async (sourceText = text) => {
     setBusy(true); setError('');
     try {
-      const result = await api.parseDraft(text);
+      const result = await api.parseDraft(sourceText);
       setDraft(result.draft);
       setNotice(result.notice ?? 'Черновик готов. Проверьте каждое поле перед подбором.');
       setFlow('form');
@@ -171,6 +189,10 @@ function NewRequest({ meta, onCreated, notify }: { meta: Meta; onCreated: () => 
     <Back onClick={() => setFlow('start')} />
     <div className="page-heading"><div><p className="eyebrow">Шаг 1 из 3</p><h1>Опишите задачу</h1><p>Укажите технику, место, дату и ограничения обычным текстом.</p></div></div>
     <label className="field"><span>Задача</span><textarea rows={7} value={text} maxLength={2000} onChange={(event) => setText(event.target.value)} data-testid="task-text" /><small>{text.length}/2000</small></label>
+    <div className="request-examples" aria-label="Примеры задач">
+      <p>Примеры задач</p>
+      <div>{requestExamples.map((example) => <button key={example.id} className="request-example" disabled={busy} onClick={() => { setText(example.text); void parse(example.text); }} data-testid={`request-example-${example.id}`}><Sparkles size={16} />{example.title}</button>)}</div>
+    </div>
     {error && <InlineError text={error} />}
     <div className="sticky-actions"><button className="button primary wide" disabled={busy || text.trim().length < 10} onClick={() => void parse()} data-testid="parse-submit">{busy ? <LoaderCircle className="spin" /> : <Sparkles />}Подготовить черновик</button></div>
   </section>;

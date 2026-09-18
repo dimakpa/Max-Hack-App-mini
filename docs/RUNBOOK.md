@@ -26,7 +26,7 @@ DEMO_AUTH=false docker compose up --build
 
 1. Запустить совместимый runtime отдельно от Compose.
 2. Самостоятельно подготовить модель. `docker compose up` ничего не скачивает.
-3. Задать `AI_PROVIDER=ollama`, `OLLAMA_URL` и `OLLAMA_MODEL` в локальном окружении.
+3. Для Ollama задать `AI_PROVIDER=ollama`, `OLLAMA_URL` и `OLLAMA_MODEL`. Для MLX/vLLM запустить `scripts/start-local-qwen.sh` и задать `AI_PROVIDER=openai_compatible`, `OPENAI_COMPATIBLE_URL` и `OPENAI_COMPATIBLE_MODEL`.
 4. Пересоздать backend: `docker compose up --build -d backend`.
 5. При таймауте, ошибке JSON или недоступности runtime backend прозрачно использует детерминированный mock и просит проверить поля.
 
@@ -82,4 +82,3 @@ docker compose down --volumes
 6. Проверить подпись, истечение `auth_date`, роли и deep link в web и mobile MAX.
 
 Официальные источники: [подключение mini app](https://dev.max.ru/docs/webapps/introduction), [валидация](https://dev.max.ru/docs/webapps/validation), [MAX Bridge](https://dev.max.ru/docs/webapps/bridge), [подготовка бота](https://dev.max.ru/docs/chatbots/bots-coding/prepare), [POST /messages](https://dev.max.ru/docs-api/methods/POST/messages).
-

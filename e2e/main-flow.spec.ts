@@ -49,3 +49,18 @@ test('customer to dispatcher to one review', async ({ page, isMobile }) => {
   await page.getByTestId('submit-review').click();
   await expect(page.getByText('Работы выполнены аккуратно и вовремя')).toBeVisible();
 });
+
+test('mock request examples prepare a deterministic draft', async ({ page, isMobile }) => {
+  test.skip(Boolean(isMobile), 'The full scenario is checked on desktop; mobile layout has a dedicated test.');
+  await page.goto('/');
+  await page.getByTestId('describe-start').click();
+  await expect(page.getByTestId('request-example-crane')).toBeVisible();
+  await expect(page.getByTestId('request-example-dump-truck')).toBeVisible();
+  await expect(page.getByTestId('request-example-tractor')).toBeVisible();
+  await page.getByTestId('request-example-dump-truck').click();
+  await expect(page.getByTestId('category')).toHaveValue('DUMP_TRUCK');
+  await expect(page.getByTestId('locality')).toHaveValue('Новочебоксарск');
+  await expect(page.getByTestId('duration')).toHaveValue('8');
+  await page.getByTestId('find-proposals').click();
+  await expect(page.getByRole('heading', { name: 'Подходящие предложения' })).toBeVisible();
+});

@@ -95,9 +95,36 @@ Seed создаёт `Поставщик А`, `Поставщик Б`, `Пост�
 | `PUBLIC_API_URL` | Публичный HTTPS URL API/webhook | локальный URL в Compose |
 | `FRONTEND_ORIGIN` | Явный CORS origin | `http://localhost:8080` |
 | `TRUST_PROXY_HOPS` | Число доверенных reverse-proxy hop для IP/rate limit | `0`; в Compose `1` |
-| `AI_PROVIDER` | `mock` или `ollama` | `mock` |
+| `AI_PROVIDER` | `mock`, `ollama` или `openai_compatible` | `mock` |
+| `AI_TIMEOUT_MS` | Таймаут локальной модели | `30000` |
 | `OLLAMA_URL` | URL совместимого runtime | `http://host.docker.internal:11434` |
 | `OLLAMA_MODEL` | Имя локальной модели | `qwen3:4b` |
+| `OPENAI_COMPATIBLE_URL` | OpenAI-compatible API MLX/vLLM | `http://host.docker.internal:11435/v1` |
+| `OPENAI_COMPATIBLE_MODEL` | Имя модели в runtime | `mlx-community/Qwen3-8B-4bit` |
+
+## Локальный Qwen3-8B на Apple Silicon
+
+Найденная модель имеет формат MLX 4-bit. Для локального Mac используйте установленный MLX Server; этот же backend-контракт совместим с vLLM через OpenAI API.
+
+В первом терминале:
+
+```bash
+npm run ai:start
+```
+
+Во втором терминале пересоздайте backend с модельным провайдером:
+
+```bash
+AI_PROVIDER=openai_compatible docker compose up --build -d backend frontend bot
+```
+
+Проверить runtime и полный путь через backend:
+
+```bash
+npm run ai:smoke
+```
+
+Затем откройте `http://localhost:8080`, нажмите `Описать задачу` и подготовьте черновик. В ответе `POST /api/drafts/parse` поле `draft.parserProvider` должно иметь значение `openai_compatible`, а `fallback` — `false`. Если runtime недоступен, сервис безопасно использует детерминированный parser и показывает предупреждение.
 
 ## Команды разработки
 
