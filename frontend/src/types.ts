@@ -62,3 +62,13 @@ export interface Notification {
   status: string;
   createdAt: string;
 }
+
+export interface SupplierEquipment {
+  id: string;
+  category: Category;
+  title: string;
+  description: string;
+  pricePerShift: number;
+  responseMinutes: number;
+  specifications: Record<string, string>;
+}

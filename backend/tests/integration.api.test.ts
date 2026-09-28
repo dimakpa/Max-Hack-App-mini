@@ -31,7 +31,7 @@ describe('API customer and dispatcher flow', () => {
     const draft = await readyDraft();
     const proposals = await request(app).get(`/api/drafts/${draft.id}/proposals`).set(customer);
     expect(proposals.status).toBe(200);
-    expect(proposals.body.proposals).toHaveLength(3);
+    expect(proposals.body.proposals).toHaveLength(4);
     expect(proposals.body.proposals[0].supplier.name).toBe('Поставщик А');
 
     const payload = { draftId: draft.id, equipmentId: proposals.body.proposals[0].id, idempotencyKey: randomUUID() };
@@ -144,5 +144,29 @@ describe('API customer and dispatcher flow', () => {
     expect(application.body.application.status).toBe('SUBMITTED');
     const suppliers = await pool.query("SELECT count(*)::int AS count FROM suppliers WHERE name='Тестовая механизация'");
     expect(suppliers.rows[0].count).toBe(0);
+  });
+
+  it('lets a dispatcher manage only their own catalog', async () => {
+    const catalog = await request(app).get('/api/supplier/equipment').set(dispatcher);
+    expect(catalog.status).toBe(200);
+    expect(catalog.body.equipment).toHaveLength(10);
+    expect((await request(app).get('/api/supplier/equipment').set(customer)).status).toBe(403);
+
+    const created = await request(app).post('/api/supplier/equipment').set(dispatcher).send({
+      category: 'TRACTOR',
+      title: 'Трактор для теста',
+      description: 'Тестовая позиция с экипажем для проверки каталога.',
+      pricePerShift: 31_000,
+      responseMinutes: 50
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.equipment.title).toBe('Трактор для теста');
+
+    const afterCreate = await request(app).get('/api/supplier/equipment').set(dispatcher);
+    expect(afterCreate.body.equipment).toHaveLength(11);
+    expect((await request(app).delete(`/api/supplier/equipment/${created.body.equipment.id}`).set({ 'x-demo-user': 'dispatcher-b' })).status).toBe(404);
+    expect((await request(app).delete(`/api/supplier/equipment/${created.body.equipment.id}`).set(dispatcher)).status).toBe(204);
+    const afterDelete = await request(app).get('/api/supplier/equipment').set(dispatcher);
+    expect(afterDelete.body.equipment).toHaveLength(10);
   });
 });

@@ -14,6 +14,7 @@ import {
   rollbackSchema,
   statusSchema,
   supplierApplicationSchema,
+  supplierEquipmentSchema,
   textDraftSchema
 } from './schemas.js';
 import { orderSelect, serializeDraft, serializeOrder } from './serializers.js';
@@ -68,6 +69,79 @@ apiRouter.get('/demo-users', async (_req, res) => {
      WHERE demo_alias IS NOT NULL ORDER BY role, demo_alias`
   );
   res.json({ users: result.rows.map((row) => ({ alias: row.demo_alias, name: row.display_name, role: row.role, supplierId: row.supplier_id })) });
+});
+
+apiRouter.get('/supplier/equipment', requireRole('DISPATCHER'), async (req, res) => {
+  const result = await pool.query(
+    `SELECT id, category, title, description, price_per_shift, response_minutes, specifications
+     FROM equipment
+     WHERE supplier_id=$1 AND is_available=true
+     ORDER BY created_at DESC, title`,
+    [user(req).supplierId]
+  );
+  res.json({ equipment: result.rows.map((row) => ({
+    id: row.id,
+    category: row.category,
+    title: row.title,
+    description: row.description,
+    pricePerShift: row.price_per_shift,
+    responseMinutes: row.response_minutes,
+    specifications: row.specifications
+  })) });
+});
+
+apiRouter.post('/supplier/equipment', requireRole('DISPATCHER'), async (req, res) => {
+  const body = supplierEquipmentSchema.parse(req.body);
+  const equipmentId = randomUUID();
+  await inTransaction(async (client) => {
+    await client.query(
+      `INSERT INTO equipment(
+         id, supplier_id, category, title, description, region, price_per_shift,
+         response_minutes, is_available, image_path, specifications
+       ) VALUES ($1,$2,$3,$4,$5,'Чувашская Республика',$6,$7,true,'/assets/fleet.png','{}'::jsonb)`,
+      [equipmentId, user(req).supplierId, body.category, body.title, body.description, body.pricePerShift, body.responseMinutes]
+    );
+    await client.query(
+      `INSERT INTO equipment_availability(id, equipment_id, available_from, available_to, is_available)
+       VALUES ($1,$2,'2025-01-01T00:00:00Z','2035-12-31T23:59:59Z',true)`,
+      [randomUUID(), equipmentId]
+    );
+  });
+  const result = await pool.query(
+    `SELECT id, category, title, description, price_per_shift, response_minutes, specifications
+     FROM equipment WHERE id=$1`,
+    [equipmentId]
+  );
+  const equipment = assertFound(result.rows[0], 'Техника не найдена');
+  res.status(201).json({ equipment: {
+    id: equipment.id,
+    category: equipment.category,
+    title: equipment.title,
+    description: equipment.description,
+    pricePerShift: equipment.price_per_shift,
+    responseMinutes: equipment.response_minutes,
+    specifications: equipment.specifications
+  } });
+});
+
+apiRouter.delete('/supplier/equipment/:id', requireRole('DISPATCHER'), async (req, res) => {
+  const authUser = user(req);
+  const activeOrders = await pool.query(
+    `SELECT 1 FROM orders
+     WHERE equipment_id=$1 AND supplier_id=$2 AND status IN ('NEW','CONFIRMED','IN_PROGRESS')`,
+    [req.params.id, authUser.supplierId]
+  );
+  if (activeOrders.rowCount) {
+    throw new ApiError(409, 'EQUIPMENT_HAS_ACTIVE_ORDERS', 'Нельзя удалить технику с активными заявками');
+  }
+  const result = await pool.query(
+    `UPDATE equipment SET is_available=false
+     WHERE id=$1 AND supplier_id=$2 AND is_available=true
+     RETURNING id`,
+    [req.params.id, authUser.supplierId]
+  );
+  assertFound(result.rows[0], 'Техника не найдена');
+  res.status(204).end();
 });
 
 apiRouter.post('/drafts/parse', requireRole('CUSTOMER'), async (req, res) => {

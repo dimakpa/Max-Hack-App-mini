@@ -38,3 +38,11 @@ export const supplierApplicationSchema = z.object({
   contact: z.string().trim().min(3).max(160),
   categories: z.array(z.enum(categories)).min(1).max(4)
 });
+
+export const supplierEquipmentSchema = z.object({
+  category: z.enum(categories),
+  title: z.string().trim().min(2).max(120),
+  description: z.string().trim().min(5).max(500),
+  pricePerShift: z.number().int().min(1_000).max(1_000_000),
+  responseMinutes: z.number().int().min(10).max(1_440)
+});

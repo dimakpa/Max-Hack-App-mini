@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import {
   ArrowLeft, Bell, BriefcaseBusiness, Building2, CalendarClock, Check, ChevronRight,
   CircleAlert, Clock3, FileText, HardHat, LoaderCircle, MapPin, MessageSquareText,
-  PhoneCall, Plus, RefreshCw, RotateCcw, Send, Sparkles, Star, UserRound, X
+  PhoneCall, Plus, RefreshCw, RotateCcw, Send, Sparkles, Star, Trash2, Truck, UserRound, X
 } from 'lucide-react';
 import { api, ApiClientError, getDemoAlias, setDemoAlias, type DraftFields } from './api';
 import { categoryLabels, dateTime, money, statusLabels } from './format';
-import type { Category, DemoUser, Draft, Meta, Notification, Order, OrderStatus, Proposal, User } from './types';
+import type { Category, DemoUser, Draft, Meta, Notification, Order, OrderStatus, Proposal, SupplierEquipment, User } from './types';
 
-type Section = 'new' | 'orders' | 'supplier' | 'notifications';
+type Section = 'new' | 'orders' | 'supplier' | 'equipment' | 'notifications';
 type Flow = 'start' | 'describe' | 'form' | 'proposals' | 'success';
 
 const demoBuild = import.meta.env.VITE_DEMO_AUTH === 'true';
@@ -105,6 +105,7 @@ function App() {
     { id: 'supplier', label: 'Стать поставщиком', icon: <Building2 /> }
   ] : [
     { id: 'orders', label: 'Заявки поставщика', icon: <BriefcaseBusiness /> },
+    { id: 'equipment', label: 'Моя техника', icon: <Truck /> },
     { id: 'notifications', label: 'Уведомления', icon: <Bell /> }
   ];
 
@@ -131,6 +132,7 @@ function App() {
         {section === 'new' && customer && <NewRequest meta={meta} onCreated={() => setSection('orders')} notify={setToast} />}
         {section === 'orders' && <Orders user={user} onNew={() => setSection('new')} notify={setToast} />}
         {section === 'supplier' && customer && <SupplierApplication meta={meta} notify={setToast} />}
+        {section === 'equipment' && !customer && <SupplierEquipmentList meta={meta} notify={setToast} />}
         {section === 'notifications' && <Notifications />}
       </main>
     </div>
@@ -365,6 +367,62 @@ function OrderDetail({ order, user, onClose, onChanged }: { order: Order; user: 
     {rollingBack && order.allowedRollback && <div className="subdialog" ref={rollbackDialogRef}><h3>Вернуть статус «{statusLabels[order.allowedRollback.target]}»?</h3><p className="muted">Заказчик получит уведомление, а изменение останется в истории заявки.</p><label className="field"><span>Причина изменения</span><textarea rows={3} minLength={3} maxLength={500} value={rollbackReason} onChange={(event) => setRollbackReason(event.target.value)} /></label><div><button className="button secondary" onClick={() => setRollingBack(false)}>Назад</button><button className="button primary" disabled={rollbackReason.trim().length < 3 || busy} onClick={() => void rollback()} data-testid="confirm-rollback"><RotateCcw />Вернуть</button></div></div>}
     {reviewing && <form className="subdialog review-form" onSubmit={review}><div className="rating" aria-label="Оценка">{[1,2,3,4,5].map((value) => <button type="button" aria-label={`${value}`} key={value} className={value <= rating ? 'active' : ''} onClick={() => setRating(value)}>★</button>)}</div><label className="field"><span>Короткий отзыв</span><textarea minLength={3} maxLength={500} required rows={3} value={reviewText} onChange={(event) => setReviewText(event.target.value)} data-testid="review-text" /></label><button className="button primary wide" disabled={busy} type="submit" data-testid="submit-review">Сохранить отзыв</button></form>}
   </aside></div>;
+}
+
+function SupplierEquipmentList({ meta, notify }: { meta: Meta; notify: (message: string) => void }) {
+  const [items, setItems] = useState<SupplierEquipment[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [category, setCategory] = useState<Category>(meta.categories[0]?.value ?? 'MOBILE_CRANE');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [pricePerShift, setPricePerShift] = useState('');
+  const [responseMinutes, setResponseMinutes] = useState('45');
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setBusy(true); setError('');
+    try { setItems((await api.supplierEquipment()).equipment); }
+    catch (err) { setError(messageOf(err)); }
+    finally { setBusy(false); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const addEquipment = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true); setError('');
+    try {
+      const result = await api.addSupplierEquipment({ category, title, description, pricePerShift: Number(pricePerShift), responseMinutes: Number(responseMinutes) });
+      setItems((current) => [result.equipment, ...current]);
+      setTitle(''); setDescription(''); setPricePerShift(''); setResponseMinutes('45'); setAdding(false);
+      notify('Позиция добавлена в каталог');
+    } catch (err) { setError(messageOf(err)); }
+    finally { setBusy(false); }
+  };
+
+  const removeEquipment = async (item: SupplierEquipment) => {
+    if (!window.confirm(`Убрать «${item.title}» из каталога? Новые заказчики больше не увидят эту позицию.`)) return;
+    setBusy(true); setError('');
+    try {
+      await api.removeSupplierEquipment(item.id);
+      setItems((current) => current.filter((currentItem) => currentItem.id !== item.id));
+      notify('Позиция убрана из каталога');
+    } catch (err) { setError(messageOf(err)); }
+    finally { setBusy(false); }
+  };
+
+  return <section className="page equipment-page"><div className="page-heading row-heading"><div><p className="eyebrow">Поставщик</p><h1>Моя техника</h1><p>Эти позиции видят заказчики при подборе техники.</p></div><button className="button primary desktop-action" onClick={() => setAdding(true)}><Plus />Добавить</button></div>
+    {error && <InlineError text={error} />}
+    {adding && <form className="form-grid equipment-form" onSubmit={addEquipment}>
+      <label className="field"><span>Категория *</span><select value={category} onChange={(event) => setCategory(event.target.value as Category)}>{meta.categories.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+      <label className="field"><span>Название *</span><input required minLength={2} maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Например, автокран 25 т" /></label>
+      <label className="field full"><span>Описание *</span><textarea required rows={3} minLength={5} maxLength={500} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Ключевые особенности, экипаж, условия работы" /></label>
+      <label className="field"><span>Цена за смену, ₽ *</span><input required type="number" min="1000" max="1000000" value={pricePerShift} onChange={(event) => setPricePerShift(event.target.value)} /></label>
+      <label className="field"><span>Подача, минут *</span><input required type="number" min="10" max="1440" value={responseMinutes} onChange={(event) => setResponseMinutes(event.target.value)} /></label>
+      <div className="equipment-form-actions full"><button className="button secondary" type="button" disabled={busy} onClick={() => setAdding(false)}>Отмена</button><button className="button primary" disabled={busy} type="submit">{busy ? <LoaderCircle className="spin" /> : <Plus />}Добавить в каталог</button></div>
+    </form>}
+    {busy && !items.length ? <Spinner label="Загружаем технику" /> : !items.length ? <Empty icon={<Truck />} title="Пока нет позиций" text="Добавьте первую единицу техники, чтобы она стала доступна заказчикам." action={<button className="button primary" onClick={() => setAdding(true)}><Plus />Добавить технику</button>} /> : <div className="equipment-list">{items.map((item) => <article key={item.id} className="equipment-row"><div><p className="eyebrow">{categoryLabels[item.category]}</p><h2>{item.title}</h2><p>{item.description}</p><div className="equipment-facts"><span>{money(item.pricePerShift)} / смена</span><span>Подача ~{item.responseMinutes} мин</span></div></div><button className="icon-button danger-icon" title="Убрать из каталога" aria-label={`Убрать ${item.title} из каталога`} disabled={busy} onClick={() => void removeEquipment(item)}><Trash2 /></button></article>)}</div>}
+  </section>;
 }
 
 function SupplierApplication({ meta, notify }: { meta: Meta; notify: (message: string) => void }) {

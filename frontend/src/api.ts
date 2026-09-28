@@ -1,4 +1,4 @@
-import type { DemoUser, Draft, Meta, Notification, Order, Proposal, User } from './types';
+import type { Category, DemoUser, Draft, Meta, Notification, Order, Proposal, SupplierEquipment, User } from './types';
 
 const base = import.meta.env.VITE_API_BASE ?? '/api';
 const demoEnabled = import.meta.env.VITE_DEMO_AUTH === 'true';
@@ -44,6 +44,9 @@ export const api = {
   acknowledgeCallback: (id: string) => request<{ status: string; replayed: boolean }>(`/orders/${id}/callback/acknowledge`, { method: 'POST' }),
   review: (id: string, rating: number, text: string) => request<{ review: unknown }>(`/orders/${id}/review`, { method: 'POST', body: JSON.stringify({ rating, text }) }),
   supplierApplication: (body: { companyName: string; region: string; contact: string; categories: string[] }) => request<{ application: { id: string; status: string; companyName: string } }>('/supplier-applications', { method: 'POST', body: JSON.stringify(body) }),
+  supplierEquipment: () => request<{ equipment: SupplierEquipment[] }>('/supplier/equipment'),
+  addSupplierEquipment: (body: { category: Category; title: string; description: string; pricePerShift: number; responseMinutes: number }) => request<{ equipment: SupplierEquipment }>('/supplier/equipment', { method: 'POST', body: JSON.stringify(body) }),
+  removeSupplierEquipment: (id: string) => request<void>(`/supplier/equipment/${id}`, { method: 'DELETE' }),
   notifications: () => request<{ notifications: Notification[] }>('/notifications')
 };
 
