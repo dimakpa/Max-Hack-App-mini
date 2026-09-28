@@ -6,9 +6,9 @@ services:
     environment:
       POSTGRES_DB: techzakaz
       POSTGRES_USER: techzakaz
-      POSTGRES_PASSWORD: techzakaz_local
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-techzakaz_local}
     ports:
-      - "5434:5432"
+      - "${DB_BIND_ADDRESS:-127.0.0.1}:5434:5432"
     volumes:
       - techzakaz_db:/var/lib/postgresql/data
     healthcheck:
@@ -22,11 +22,11 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 3001
-      DATABASE_URL: postgres://techzakaz:techzakaz_local@db:5432/techzakaz
+      DATABASE_URL: postgres://techzakaz:${POSTGRES_PASSWORD:-techzakaz_local}@db:5432/techzakaz
       DEMO_AUTH: ${DEMO_AUTH:-true}
-      FRONTEND_ORIGIN: http://localhost:8080
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:8080}
       TRUST_PROXY_HOPS: 1
       MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
       AI_PROVIDER: ${AI_PROVIDER:-mock}
@@ -39,7 +39,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "3001:3001"
+      - "${BACKEND_BIND_ADDRESS:-127.0.0.1}:3001:3001"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3001/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 5s
@@ -51,17 +51,21 @@ services:
       context: .
       dockerfile: bot/Dockerfile
     environment:
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 3002
-      DATABASE_URL: postgres://techzakaz:techzakaz_local@db:5432/techzakaz
+      DATABASE_URL: postgres://techzakaz:${POSTGRES_PASSWORD:-techzakaz_local}@db:5432/techzakaz
       MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-}
+      NODE_EXTRA_CA_CERTS: /run/techzakaz/russian-trusted-root-ca.crt
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:8080}
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3001}
     depends_on:
       backend:
         condition: service_healthy
     ports:
-      - "3002:3002"
+      - "${BOT_BIND_ADDRESS:-127.0.0.1}:3002:3002"
+    volumes:
+      - ./deploy/russian-trusted-root-ca.crt:/run/techzakaz/russian-trusted-root-ca.crt:ro
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3002/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 5s
@@ -79,7 +83,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:8080:80"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
       interval: 5s

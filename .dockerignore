@@ -2,6 +2,8 @@ node_modules
 **/node_modules
 **/dist
 .git
+.DS_Store
+._*
 .env
 .env.*
 token_max.md
@@ -10,4 +12,3 @@ qa/screenshots
 playwright-report
 test-results
 *.log
-

@@ -1,4 +1,5 @@
 import express from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import pg from 'pg';
 import { z } from 'zod';
 import { deliver } from './delivery.js';
@@ -7,6 +8,7 @@ const env = z.object({
   PORT: z.coerce.number().default(3002),
   DATABASE_URL: z.string().url(),
   MAX_BOT_TOKEN: z.string().optional().default(''),
+  MAX_WEBHOOK_SECRET: z.string().regex(/^[A-Za-z0-9_-]{5,256}$/).optional().default(''),
   PUBLIC_APP_URL: z.string().url().default('http://localhost:8080'),
   PUBLIC_API_URL: z.string().url().default('http://localhost:3001')
 }).parse(process.env);
@@ -21,6 +23,12 @@ app.get('/health', async (_req, res) => {
   res.json({ status: 'ok', deliveryMode: env.MAX_BOT_TOKEN ? 'max' : 'dry-run', pending: pending.rows[0].count });
 });
 
+function hasValidWebhookSecret(header: string | undefined): boolean {
+  if (!env.MAX_WEBHOOK_SECRET) return true;
+  if (!header || header.length !== env.MAX_WEBHOOK_SECRET.length) return false;
+  return timingSafeEqual(Buffer.from(header), Buffer.from(env.MAX_WEBHOOK_SECRET));
+}
+
 const webhookSchema = z.object({
   update_type: z.string(),
   user: z.object({ user_id: z.number() }).optional(),
@@ -29,6 +37,11 @@ const webhookSchema = z.object({
 });
 
 app.post('/webhook', async (req, res) => {
+  const secret = req.get('X-Max-Bot-Api-Secret');
+  if (!hasValidWebhookSecret(secret)) {
+    res.status(401).json({ ok: false });
+    return;
+  }
   const event = webhookSchema.parse(req.body);
   if (event.update_type === 'bot_started' && event.user?.user_id) {
     await deliver({
@@ -91,4 +104,3 @@ async function shutdown(): Promise<void> {
 }
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
-

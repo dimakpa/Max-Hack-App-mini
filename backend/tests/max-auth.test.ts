@@ -17,7 +17,11 @@ function signedData(token: string, now: number): string {
 describe('MAX WebAppData validation', () => {
   it('accepts a current correctly signed payload', () => {
     const now = Date.parse('2026-09-18T10:00:00Z');
-    expect(validateMaxInitData(signedData('test-token', now), 'test-token', now).id).toBe(12345);
+    expect(validateMaxInitData(signedData('test-token', now), 'test-token', now)).toMatchObject({
+      id: 12345,
+      first_name: 'Тест',
+      username: null
+    });
   });
 
   it('rejects tampering, duplicate keys and stale auth dates', () => {
@@ -27,4 +31,3 @@ describe('MAX WebAppData validation', () => {
     expect(() => validateMaxInitData(signedData('test-token', now - 2 * 60 * 60_000), 'test-token', now)).toThrow(/устарели/i);
   });
 });
-

@@ -14,3 +14,4 @@ token_max.md
 frontend/vite.config.js
 frontend/vite.config.d.ts
 .DS_Store
+.local/

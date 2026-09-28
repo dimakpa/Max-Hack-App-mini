@@ -138,6 +138,10 @@ npm run lint
 npm run audit:prod
 ```
 
+## Деплой из GitHub
+
+Push в ветку `main` может автоматически проверять и выкладывать стенд на REG.RU через GitHub Actions. Настройка и правила хранения deploy-ключа описаны в [GitHub deployment](docs/GITHUB_DEPLOY.md).
+
 Миграции и seed отдельно:
 
 ```bash

@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY,
   demo_alias varchar(80) UNIQUE,
   max_user_id bigint UNIQUE,
+  max_first_name varchar(120),
+  max_last_name varchar(120),
+  max_username varchar(120),
   display_name varchar(120) NOT NULL,
   role varchar(20) NOT NULL CHECK (role IN ('CUSTOMER', 'DISPATCHER', 'ADMIN')),
   supplier_id uuid REFERENCES suppliers(id),
@@ -145,4 +148,3 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   name varchar(255) PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now()
 );
-

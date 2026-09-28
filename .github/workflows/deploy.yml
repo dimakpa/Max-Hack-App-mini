@@ -1,0 +1,76 @@
+name: Verify and Deploy Demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: techzakaz-demo-production
+  cancel-in-progress: true
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: 5.63.152.157
+      DEPLOY_USER: techzakaz-deploy
+      DEPLOY_PATH: /opt/techzakaz
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Test and build
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Configure deployment SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.REG_RU_DEPLOY_KEY }}
+        run: |
+          test -n "$DEPLOY_KEY"
+          install -d -m 700 ~/.ssh
+          printf '%s' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          install -m 600 .github/known_hosts ~/.ssh/known_hosts
+
+      - name: Open deployment SSH connection
+        run: |
+          for attempt in 1 2 3 4 5; do
+            ssh -MNf -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o IPQoS=none -o ConnectTimeout=25 -o ControlMaster=auto -o ControlPersist=10m \
+              -o ControlPath=/tmp/techzakaz-deploy.sock "$DEPLOY_USER@$DEPLOY_HOST" && exit 0
+            sleep "$((attempt * 3))"
+          done
+          exit 1
+
+      - name: Sync source to VPS
+        run: |
+          rsync -az --delete --exclude-from=.deployignore \
+            -e 'ssh -S /tmp/techzakaz-deploy.sock -o StrictHostKeyChecking=yes' \
+            ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+
+      - name: Rebuild and verify services
+        run: |
+          ssh -S /tmp/techzakaz-deploy.sock -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/techzakaz
+          docker compose -f compose.yaml -f compose.deploy.yaml --env-file .env -p techzakaz up --build --detach --remove-orphans
+          docker compose -f compose.yaml -f compose.deploy.yaml --env-file .env -p techzakaz ps
+          curl --fail --silent --show-error http://127.0.0.1:3001/ready >/dev/null
+          curl --fail --silent --show-error http://127.0.0.1:3002/health >/dev/null
+          REMOTE
+
+      - name: Close deployment SSH connection
+        if: always()
+        run: ssh -S /tmp/techzakaz-deploy.sock -O exit "$DEPLOY_USER@$DEPLOY_HOST" || true

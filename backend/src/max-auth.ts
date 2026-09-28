@@ -5,6 +5,7 @@ export interface MaxLaunchUser {
   id: number;
   first_name: string;
   last_name?: string;
+  username?: string | null;
 }
 
 export function validateMaxInitData(initData: string, botToken: string, now = Date.now()): MaxLaunchUser {
@@ -46,10 +47,16 @@ export function validateMaxInitData(initData: string, botToken: string, now = Da
   }
   try {
     const user = JSON.parse(params.user ?? '') as MaxLaunchUser;
-    if (!Number.isSafeInteger(user.id) || !user.first_name) throw new Error('invalid user');
-    return user;
+    if (!Number.isSafeInteger(user.id) || typeof user.first_name !== 'string' || !user.first_name.trim()) {
+      throw new Error('invalid user');
+    }
+    return {
+      id: user.id,
+      first_name: user.first_name,
+      last_name: typeof user.last_name === 'string' ? user.last_name : undefined,
+      username: typeof user.username === 'string' ? user.username : null
+    };
   } catch {
     throw new ApiError(401, 'INVALID_MAX_USER', 'В данных запуска MAX нет корректного пользователя');
   }
 }
-

@@ -1,0 +1,12 @@
+{$SITE_ADDRESS} {
+    encode zstd gzip
+
+    @maxWebhook path /webhook /webhook/*
+    handle @maxWebhook {
+        reverse_proxy bot:3002
+    }
+
+    handle {
+        reverse_proxy frontend:80
+    }
+}

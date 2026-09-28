@@ -54,6 +54,7 @@ function Spinner({ label = 'Загрузка' }: { label?: string }) {
 }
 
 function App() {
+  const maxLaunch = Boolean(window.WebApp?.initData);
   const [section, setSection] = useState<Section>('new');
   const [user, setUser] = useState<User | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -69,7 +70,7 @@ function App() {
       const [me, loadedMeta] = await Promise.all([api.me(), api.meta()]);
       setUser(me.user);
       setMeta(loadedMeta);
-      if (demoBuild) setDemoUsers((await api.demoUsers()).users);
+      if (demoBuild && !maxLaunch) setDemoUsers((await api.demoUsers()).users);
     } catch (error) {
       setFatal(error instanceof Error ? error.message : 'Сервис недоступен');
     } finally {
@@ -120,7 +121,7 @@ function App() {
         <div className="demo-pill"><span className="demo-dot" />Тестовые данные</div>
         <div className="role-box">
           <UserRound size={18} />
-          {demoBuild ? <select aria-label="Тестовая роль" data-testid="role-switcher" value={getDemoAlias()} onChange={(event) => void switchRole(event.target.value)}>
+          {demoBuild && !maxLaunch ? <select aria-label="Тестовая роль" data-testid="role-switcher" value={getDemoAlias()} onChange={(event) => void switchRole(event.target.value)}>
             {demoUsers.map((item) => <option key={item.alias} value={item.alias}>{item.name}</option>)}
           </select> : <span>{user.displayName}</span>}
         </div>

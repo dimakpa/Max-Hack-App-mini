@@ -19,8 +19,8 @@ export function getDemoAlias(): string { return demoAlias; }
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set('content-type', 'application/json');
-  if (demoEnabled) headers.set('x-demo-user', demoAlias);
-  else if (window.WebApp?.initData) headers.set('x-max-init-data', window.WebApp.initData);
+  if (window.WebApp?.initData) headers.set('x-max-init-data', window.WebApp.initData);
+  else if (demoEnabled) headers.set('x-demo-user', demoAlias);
   const response = await fetch(`${base}${path}`, { ...init, headers });
   const body = await response.json().catch(() => ({})) as { error?: { code?: string; message?: string } };
   if (!response.ok) throw new ApiClientError(response.status, body.error?.code ?? 'REQUEST_FAILED', body.error?.message ?? 'Не удалось выполнить запрос');
