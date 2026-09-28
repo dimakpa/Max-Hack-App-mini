@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import pg from 'pg';
 import { z } from 'zod';
 import { deliver } from './delivery.js';
+import { registerMaxBotUser } from './users.js';
 
 const env = z.object({
   PORT: z.coerce.number().default(3002),
@@ -31,7 +32,12 @@ function hasValidWebhookSecret(header: string | undefined): boolean {
 
 const webhookSchema = z.object({
   update_type: z.string(),
-  user: z.object({ user_id: z.number() }).optional(),
+  user: z.object({
+    user_id: z.number().int(),
+    first_name: z.string().optional(),
+    last_name: z.string().optional(),
+    username: z.string().optional()
+  }).optional(),
   chat_id: z.number().optional(),
   payload: z.string().nullable().optional()
 });
@@ -44,9 +50,15 @@ app.post('/webhook', async (req, res) => {
   }
   const event = webhookSchema.parse(req.body);
   if (event.update_type === 'bot_started' && event.user?.user_id) {
+    await registerMaxBotUser(pool, {
+      userId: event.user.user_id,
+      firstName: event.user.first_name,
+      lastName: event.user.last_name,
+      username: event.user.username
+    });
     await deliver({
       maxUserId: String(event.user.user_id),
-      text: 'Добро пожаловать в ТехЗаказ. Опишите задачу или заполните короткую заявку на технику с экипажем.',
+      text: 'Добро пожаловать в ТехЗаказ. Профиль создан: вы можете открыть приложение и оставить заявку на технику с экипажем.',
       deepLinkPayload: null
     }, { token: env.MAX_BOT_TOKEN, publicAppUrl: env.PUBLIC_APP_URL });
   }
