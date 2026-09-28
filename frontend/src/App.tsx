@@ -118,7 +118,7 @@ function App() {
     <div className="workspace">
       <header className="topbar">
         <div className="mobile-brand"><span className="brand-mark"><HardHat size={19} /></span><strong>ТехЗаказ</strong></div>
-        <div className="demo-pill"><span className="demo-dot" />Тестовые данные</div>
+        {demoBuild && !maxLaunch && <div className="demo-pill"><span className="demo-dot" />Тестовые данные</div>}
         <div className="role-box">
           <UserRound size={18} />
           {demoBuild && !maxLaunch ? <select aria-label="Тестовая роль" data-testid="role-switcher" value={getDemoAlias()} onChange={(event) => void switchRole(event.target.value)}>
@@ -392,7 +392,7 @@ function Notifications() {
   const [error, setError] = useState('');
   const load = useCallback(async () => { setBusy(true); try { setItems((await api.notifications()).notifications); setError(''); } catch (err) { setError(messageOf(err)); } finally { setBusy(false); } }, []);
   useEffect(() => { void load(); }, [load]);
-  return <section className="page narrow"><div className="page-heading row-heading"><div><p className="eyebrow">Bot adapter</p><h1>Уведомления</h1><p>В demo-режиме доставка записывается как dry-run.</p></div><button className="icon-button" title="Обновить" onClick={() => void load()}><RefreshCw /></button></div>{error && <InlineError text={error} />}{busy ? <Spinner /> : !items.length ? <Empty icon={<Bell />} title="Уведомлений нет" text="Здесь появятся события по заявкам и обратным звонкам." /> : <div className="notification-list">{items.map((item) => <article key={item.id}><span className="notification-icon"><MessageSquareText /></span><div><p>{item.text}</p><small>{dateTime(item.createdAt)} · {item.status === 'DELIVERED_DRY_RUN' ? 'dry-run' : item.status}</small></div></article>)}</div>}</section>;
+  return <section className="page narrow"><div className="page-heading row-heading"><div><p className="eyebrow">MAX</p><h1>Уведомления</h1><p>События по заявкам и обратным звонкам.</p></div><button className="icon-button" title="Обновить" onClick={() => void load()}><RefreshCw /></button></div>{error && <InlineError text={error} />}{busy ? <Spinner /> : !items.length ? <Empty icon={<Bell />} title="Уведомлений нет" text="Здесь появятся события по заявкам и обратным звонкам." /> : <div className="notification-list">{items.map((item) => <article key={item.id}><span className="notification-icon"><MessageSquareText /></span><div><p>{item.text}</p><small>{dateTime(item.createdAt)} · {item.status === 'DELIVERED_DRY_RUN' ? 'dry-run' : item.status}</small></div></article>)}</div>}</section>;
 }
 
 function Back({ onClick }: { onClick: () => void }) { return <button className="back-button" onClick={onClick}><ArrowLeft />Назад</button>; }
