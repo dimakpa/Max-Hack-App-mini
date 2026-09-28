@@ -12,6 +12,8 @@ export interface Draft {
   scheduledAt: string | null;
   durationHours: number | null;
   locality: string | null;
+  siteAddress: string | null;
+  workVolume: string | null;
   workDescription: string | null;
   constraints: string | null;
   parserProvider: string;
@@ -38,6 +40,8 @@ export interface Order {
   scheduledAt: string;
   durationHours: number;
   locality: string;
+  siteAddress: string | null;
+  workVolume: string | null;
   workDescription: string;
   constraints: string | null;
   pricePerShift: number;
@@ -70,5 +74,6 @@ export interface SupplierEquipment {
   description: string;
   pricePerShift: number;
   responseMinutes: number;
+  imagePath: string;
   specifications: Record<string, string>;
 }

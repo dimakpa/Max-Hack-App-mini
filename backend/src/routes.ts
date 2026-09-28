@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Router } from 'express';
 import type pg from 'pg';
 import { parseRequestText } from './ai.js';
@@ -31,6 +33,11 @@ const categoryLabels = {
 };
 
 const contactableStatuses: OrderStatus[] = ['NEW', 'CONFIRMED', 'IN_PROGRESS'];
+const imageTypes = new Map([
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp']
+]);
 
 function user(req: Parameters<Parameters<typeof apiRouter.get>[1]>[0]) {
   return assertFound(req.authUser, 'Пользователь не авторизован');
@@ -49,6 +56,22 @@ async function enqueue(
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [randomUUID(), recipientUserId, type, orderId, text, payload]
   );
+}
+
+async function saveEquipmentImage(imageDataUrl: string | null | undefined, fallback = '/assets/equipment/mobile-crane-25t.jpg'): Promise<string> {
+  if (!imageDataUrl) return fallback;
+  const match = imageDataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) throw new ApiError(422, 'INVALID_IMAGE', 'Загрузите фото в формате JPG, PNG или WebP');
+  const ext = imageTypes.get(match[1]!);
+  if (!ext) throw new ApiError(422, 'INVALID_IMAGE', 'Загрузите фото в формате JPG, PNG или WebP');
+  const data = Buffer.from(match[2]!, 'base64');
+  if (!data.length || data.length > 3_000_000) {
+    throw new ApiError(422, 'INVALID_IMAGE_SIZE', 'Фото должно быть до 3 МБ');
+  }
+  await mkdir(join(config.UPLOAD_DIR, 'equipment'), { recursive: true });
+  const fileName = `${randomUUID()}.${ext}`;
+  await writeFile(join(config.UPLOAD_DIR, 'equipment', fileName), data, { flag: 'wx' });
+  return `/uploads/equipment/${fileName}`;
 }
 
 apiRouter.get('/meta', async (_req, res) => {
@@ -73,7 +96,7 @@ apiRouter.get('/demo-users', async (_req, res) => {
 
 apiRouter.get('/supplier/equipment', requireRole('DISPATCHER'), async (req, res) => {
   const result = await pool.query(
-    `SELECT id, category, title, description, price_per_shift, response_minutes, specifications
+    `SELECT id, category, title, description, price_per_shift, response_minutes, image_path, specifications
      FROM equipment
      WHERE supplier_id=$1 AND is_available=true
      ORDER BY created_at DESC, title`,
@@ -86,6 +109,7 @@ apiRouter.get('/supplier/equipment', requireRole('DISPATCHER'), async (req, res)
     description: row.description,
     pricePerShift: row.price_per_shift,
     responseMinutes: row.response_minutes,
+    imagePath: row.image_path,
     specifications: row.specifications
   })) });
 });
@@ -93,13 +117,14 @@ apiRouter.get('/supplier/equipment', requireRole('DISPATCHER'), async (req, res)
 apiRouter.post('/supplier/equipment', requireRole('DISPATCHER'), async (req, res) => {
   const body = supplierEquipmentSchema.parse(req.body);
   const equipmentId = randomUUID();
+  const imagePath = await saveEquipmentImage(body.imageDataUrl);
   await inTransaction(async (client) => {
     await client.query(
       `INSERT INTO equipment(
          id, supplier_id, category, title, description, region, price_per_shift,
          response_minutes, is_available, image_path, specifications
-       ) VALUES ($1,$2,$3,$4,$5,'Чувашская Республика',$6,$7,true,'/assets/fleet.png','{}'::jsonb)`,
-      [equipmentId, user(req).supplierId, body.category, body.title, body.description, body.pricePerShift, body.responseMinutes]
+       ) VALUES ($1,$2,$3,$4,$5,'Чувашская Республика',$6,$7,true,$8,$9::jsonb)`,
+      [equipmentId, user(req).supplierId, body.category, body.title, body.description, body.pricePerShift, body.responseMinutes, imagePath, JSON.stringify(body.specifications)]
     );
     await client.query(
       `INSERT INTO equipment_availability(id, equipment_id, available_from, available_to, is_available)
@@ -108,7 +133,7 @@ apiRouter.post('/supplier/equipment', requireRole('DISPATCHER'), async (req, res
     );
   });
   const result = await pool.query(
-    `SELECT id, category, title, description, price_per_shift, response_minutes, specifications
+    `SELECT id, category, title, description, price_per_shift, response_minutes, image_path, specifications
      FROM equipment WHERE id=$1`,
     [equipmentId]
   );
@@ -120,6 +145,7 @@ apiRouter.post('/supplier/equipment', requireRole('DISPATCHER'), async (req, res
     description: equipment.description,
     pricePerShift: equipment.price_per_shift,
     responseMinutes: equipment.response_minutes,
+    imagePath: equipment.image_path,
     specifications: equipment.specifications
   } });
 });
@@ -152,10 +178,10 @@ apiRouter.post('/drafts/parse', requireRole('CUSTOMER'), async (req, res) => {
   const result = await pool.query(
     `INSERT INTO request_drafts(
        id, customer_id, source_text, category, scheduled_at, duration_hours, locality,
-       work_description, constraints_text, parser_provider
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+       site_address, work_volume, work_description, constraints_text, parser_provider
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
     [id, user(req).id, body.text, fields.category, fields.scheduledAt, fields.durationHours,
-      fields.locality, fields.workDescription, fields.constraints, parsed.provider]
+      fields.locality, fields.siteAddress, fields.workVolume, fields.workDescription, fields.constraints, parsed.provider]
   );
   res.status(201).json({ draft: serializeDraft(result.rows[0]), fallback: parsed.fallback, notice: parsed.notice });
 });
@@ -165,10 +191,10 @@ apiRouter.post('/drafts', requireRole('CUSTOMER'), async (req, res) => {
   const result = await pool.query(
     `INSERT INTO request_drafts(
        id, customer_id, category, scheduled_at, duration_hours, locality,
-       work_description, constraints_text, parser_provider, status
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'manual','READY') RETURNING *`,
+       site_address, work_volume, work_description, constraints_text, parser_provider, status
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'manual','READY') RETURNING *`,
     [randomUUID(), user(req).id, fields.category, fields.scheduledAt, fields.durationHours,
-      fields.locality, fields.workDescription, fields.constraints ?? null]
+      fields.locality, fields.siteAddress, fields.workVolume, fields.workDescription, fields.constraints ?? null]
   );
   res.status(201).json({ draft: serializeDraft(result.rows[0]) });
 });
@@ -177,10 +203,10 @@ apiRouter.put('/drafts/:id', requireRole('CUSTOMER'), async (req, res) => {
   const fields = draftFieldsSchema.parse(req.body);
   const result = await pool.query(
     `UPDATE request_drafts SET category=$1, scheduled_at=$2, duration_hours=$3, locality=$4,
-       work_description=$5, constraints_text=$6, status='READY', updated_at=now()
-     WHERE id=$7 AND customer_id=$8 AND status <> 'ORDERED' RETURNING *`,
+       site_address=$5, work_volume=$6, work_description=$7, constraints_text=$8, status='READY', updated_at=now()
+     WHERE id=$9 AND customer_id=$10 AND status <> 'ORDERED' RETURNING *`,
     [fields.category, fields.scheduledAt, fields.durationHours, fields.locality,
-      fields.workDescription, fields.constraints ?? null, req.params.id, user(req).id]
+      fields.siteAddress, fields.workVolume, fields.workDescription, fields.constraints ?? null, req.params.id, user(req).id]
   );
   res.json({ draft: serializeDraft(assertFound(result.rows[0], 'Черновик не найден или уже отправлен')) });
 });
@@ -277,11 +303,11 @@ apiRouter.post('/orders', requireRole('CUSTOMER'), async (req, res) => {
     await client.query(
       `INSERT INTO orders(id, public_number, customer_id, supplier_id, equipment_id, draft_id,
         client_request_id, status, category, scheduled_at, duration_hours, locality,
-        work_description, constraints_text, price_per_shift)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'NEW',$8,$9,$10,$11,$12,$13,$14)`,
+        site_address, work_volume, work_description, constraints_text, price_per_shift)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'NEW',$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
       [orderId, publicNumber, authUser.id, equipment.supplier_id, equipment.id, draft.id,
         body.idempotencyKey, draft.category, draft.scheduled_at, draft.duration_hours,
-        draft.locality, draft.work_description, draft.constraints_text, equipment.price_per_shift]
+        draft.locality, draft.site_address, draft.work_volume, draft.work_description, draft.constraints_text, equipment.price_per_shift]
     );
     await client.query('UPDATE request_drafts SET status=\'ORDERED\', updated_at=now() WHERE id=$1', [draft.id]);
     await client.query(

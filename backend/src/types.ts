@@ -19,6 +19,8 @@ export interface DraftFields {
   scheduledAt: string | null;
   durationHours: number | null;
   locality: string | null;
+  siteAddress: string | null;
+  workVolume: string | null;
   workDescription: string | null;
   constraints: string | null;
 }
@@ -30,4 +32,3 @@ declare global {
     }
   }
 }
-

@@ -8,6 +8,8 @@ export function serializeDraft(row: QueryResultRow): Record<string, unknown> {
     scheduledAt: row.scheduled_at?.toISOString?.() ?? row.scheduled_at,
     durationHours: row.duration_hours,
     locality: row.locality,
+    siteAddress: row.site_address,
+    workVolume: row.work_volume,
     workDescription: row.work_description,
     constraints: row.constraints_text,
     parserProvider: row.parser_provider,
@@ -24,6 +26,8 @@ export function serializeOrder(row: QueryResultRow): Record<string, unknown> {
     scheduledAt: row.scheduled_at?.toISOString?.() ?? row.scheduled_at,
     durationHours: row.duration_hours,
     locality: row.locality,
+    siteAddress: row.site_address,
+    workVolume: row.work_volume,
     workDescription: row.work_description,
     constraints: row.constraints_text,
     pricePerShift: row.price_per_shift,
@@ -54,4 +58,3 @@ export const orderSelect = `
   JOIN suppliers s ON s.id = o.supplier_id
   JOIN users u ON u.id = o.customer_id
   LEFT JOIN reviews r ON r.order_id = o.id`;
-

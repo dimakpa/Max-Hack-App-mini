@@ -8,6 +8,8 @@ export const draftFieldsSchema = z.object({
   scheduledAt: z.string().datetime(),
   durationHours: z.number().int().min(1).max(168),
   locality: z.string().trim().min(2).max(120),
+  siteAddress: z.string().trim().min(3).max(200),
+  workVolume: z.string().trim().min(2).max(300),
   workDescription: z.string().trim().min(10).max(1000),
   constraints: z.string().trim().max(500).nullable().optional()
 });
@@ -44,5 +46,7 @@ export const supplierEquipmentSchema = z.object({
   title: z.string().trim().min(2).max(120),
   description: z.string().trim().min(5).max(500),
   pricePerShift: z.number().int().min(1_000).max(1_000_000),
-  responseMinutes: z.number().int().min(10).max(1_440)
+  responseMinutes: z.number().int().min(10).max(1_440),
+  specifications: z.record(z.string().trim().min(1).max(40), z.string().trim().min(1).max(120)).optional().default({}),
+  imageDataUrl: z.string().max(4_500_000).optional().nullable()
 });

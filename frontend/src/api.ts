@@ -45,7 +45,7 @@ export const api = {
   review: (id: string, rating: number, text: string) => request<{ review: unknown }>(`/orders/${id}/review`, { method: 'POST', body: JSON.stringify({ rating, text }) }),
   supplierApplication: (body: { companyName: string; region: string; contact: string; categories: string[] }) => request<{ application: { id: string; status: string; companyName: string } }>('/supplier-applications', { method: 'POST', body: JSON.stringify(body) }),
   supplierEquipment: () => request<{ equipment: SupplierEquipment[] }>('/supplier/equipment'),
-  addSupplierEquipment: (body: { category: Category; title: string; description: string; pricePerShift: number; responseMinutes: number }) => request<{ equipment: SupplierEquipment }>('/supplier/equipment', { method: 'POST', body: JSON.stringify(body) }),
+  addSupplierEquipment: (body: { category: Category; title: string; description: string; pricePerShift: number; responseMinutes: number; specifications: Record<string, string>; imageDataUrl: string | null }) => request<{ equipment: SupplierEquipment }>('/supplier/equipment', { method: 'POST', body: JSON.stringify(body) }),
   removeSupplierEquipment: (id: string) => request<void>(`/supplier/equipment/${id}`, { method: 'DELETE' }),
   notifications: () => request<{ notifications: Notification[] }>('/notifications')
 };
@@ -55,6 +55,8 @@ export interface DraftFields {
   scheduledAt: string;
   durationHours: number;
   locality: string;
+  siteAddress: string;
+  workVolume: string;
   workDescription: string;
   constraints: string | null;
 }

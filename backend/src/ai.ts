@@ -14,6 +14,8 @@ const parsedSchema = z.object({
   scheduledAt: z.string().datetime({ offset: true }).transform((value) => new Date(value).toISOString()).nullable(),
   durationHours: z.number().int().min(1).max(168).nullable(),
   locality: z.string().min(1).max(120).nullable(),
+  siteAddress: z.string().min(1).max(200).nullable(),
+  workVolume: z.string().min(1).max(300).nullable(),
   workDescription: z.string().min(1).max(1000).nullable(),
   constraints: z.string().max(500).nullable()
 });
@@ -30,7 +32,10 @@ function extractionMessages(text: string): Array<{ role: 'system' | 'user'; cont
     content: `Ты преобразуешь заявку на спецтехнику в JSON. Верни ровно один JSON-объект без Markdown и пояснений.
 Допустимые category: MOBILE_CRANE, TRACTOR, DUMP_TRUCK, BACKHOE_LOADER. Неизвестные значения возвращай как null.
 scheduledAt должен быть ISO 8601 с часовым поясом. Текущая дата: ${new Date().toISOString()}, часовой пояс пользователя: Europe/Moscow.
-Поля: category, scheduledAt, durationHours, locality, workDescription, constraints. Не придумывай отсутствующие факты.`
+Поля: category, scheduledAt, durationHours, locality, siteAddress, workVolume, workDescription, constraints. Не придумывай отсутствующие факты.
+siteAddress — точный адрес или ориентир объекта.
+workVolume — объем работ: вес, кубометры, метры, площадь, количество рейсов или другой измеримый объем.
+constraints — условия площадки: въезд, грунт, высота, ЛЭП, пропуска, ограничения по шуму.`
   }, {
     role: 'user',
     content: text
@@ -92,11 +97,15 @@ export function parseWithMock(text: string, now = new Date()): DraftFields {
   const durationMatch = text.match(/(\d{1,3})\s*(?:час|ч\b)/i);
   const shift = /смен/i.test(text) ? 8 : null;
   const constraints = text.match(/(узк(?:ий|ий проезд|ий въезд)[^,.]*|ограниченн(?:ый|ая)[^,.]*|вылет[^,.]*|грузоподъ[её]мност[^,.]*)/i)?.[0] ?? null;
+  const workVolume = text.match(/(\d+(?:[,.]\d+)?\s*(?:т|тонн|м3|м³|куб|кубов|м\b|метр|метров|рейс|рейсов|соток|га)[^,.]*)/i)?.[0] ?? null;
+  const siteAddress = text.match(/(?:адрес|объект|ориентир|ул\.?|улица)\s*[:\-]?\s*([^,.]{4,120})/i)?.[1]?.trim() ?? null;
   return {
     category: detectCategory(text),
     scheduledAt: detectDate(text, now),
     durationHours: durationMatch ? Math.min(168, Number(durationMatch[1])) : shift,
     locality,
+    siteAddress,
+    workVolume,
     workDescription: text.trim() || null,
     constraints
   };

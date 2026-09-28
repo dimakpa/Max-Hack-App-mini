@@ -2,14 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import {
   ArrowLeft, Bell, BriefcaseBusiness, Building2, CalendarClock, Check, ChevronRight,
   CircleAlert, Clock3, FileText, HardHat, LoaderCircle, MapPin, MessageSquareText,
-  PhoneCall, Plus, RefreshCw, RotateCcw, Send, Sparkles, Star, Trash2, Truck, UserRound, X
+  Mic, PhoneCall, Plus, RefreshCw, RotateCcw, Send, Sparkles, Star, Trash2, Truck, UserRound, X,
+  ImagePlus, Ruler
 } from 'lucide-react';
 import { api, ApiClientError, getDemoAlias, setDemoAlias, type DraftFields } from './api';
 import { categoryLabels, dateTime, money, statusLabels } from './format';
 import type { Category, DemoUser, Draft, Meta, Notification, Order, OrderStatus, Proposal, SupplierEquipment, User } from './types';
 
 type Section = 'new' | 'orders' | 'supplier' | 'equipment' | 'notifications';
-type Flow = 'start' | 'describe' | 'form' | 'proposals' | 'success';
+type Flow = 'start' | 'form' | 'proposals' | 'success';
 
 const demoBuild = import.meta.env.VITE_DEMO_AUTH === 'true';
 
@@ -17,19 +18,26 @@ const requestExamples = [
   {
     id: 'crane',
     title: 'Поднять плиты краном',
-    text: 'Нужен автокран 25 тонн в Чебоксарах завтра к 9:00 на 8 часов, узкий въезд на площадку'
+    text: 'Нужен автокран 25 тонн в Чебоксарах завтра к 9:00 на 8 часов. Объект: ул. Калинина, 80, монтаж плит 8 т на высоту 12 м, узкий въезд на площадку'
   },
   {
     id: 'dump-truck',
     title: 'Вывезти грунт самосвалом',
-    text: 'Нужен самосвал КамАЗ в Новочебоксарске завтра к 8:00 на смену, вывезти грунт с участка'
+    text: 'Нужен самосвал КамАЗ в Новочебоксарске завтра к 8:00 на смену. Объект: промзона у Восточного шоссе, вывезти 40 м³ грунта, подъезд по грунтовой дороге'
   },
   {
     id: 'tractor',
     title: 'Спланировать участок трактором',
-    text: 'Нужен трактор с отвалом в Чебоксарах завтра к 10:00 на 4 часа, ограниченный проезд во двор'
+    text: 'Нужен трактор с отвалом в Чебоксарах завтра к 10:00 на 4 часа. Ориентир: двор у ТЦ Мадагаскар, спланировать 600 м², ограниченный проезд во двор'
   }
 ] as const;
+
+const specificationFields: Record<Category, string[]> = {
+  MOBILE_CRANE: ['Грузоподъемность', 'Стрела', 'Дополнительно'],
+  TRACTOR: ['Навесное', 'Мощность', 'Дополнительно'],
+  DUMP_TRUCK: ['Грузоподъемность', 'Кузов', 'Дополнительно'],
+  BACKHOE_LOADER: ['Ковш', 'Глубина копания', 'Дополнительно']
+};
 
 function tomorrowLocal(): string {
   const date = new Date();
@@ -43,6 +51,28 @@ function toLocalInput(value: string | null): string {
   if (!value) return '';
   const date = new Date(value);
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function specificationEntries(specifications: Record<string, string>, limit?: number): Array<[string, string]> {
+  const entries = Object.entries(specifications).filter(([, value]) => value.trim());
+  return typeof limit === 'number' ? entries.slice(0, limit) : entries;
+}
+
+function readImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      reject(new Error('Загрузите JPG, PNG или WebP'));
+      return;
+    }
+    if (file.size > 3_000_000) {
+      reject(new Error('Фото должно быть до 3 МБ'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function Empty({ icon, title, text, action }: { icon: ReactNode; title: string; text: string; action?: ReactNode }) {
@@ -144,14 +174,20 @@ function App() {
 
 function NewRequest({ meta, onCreated, notify }: { meta: Meta; onCreated: () => void; notify: (message: string) => void }) {
   const [flow, setFlow] = useState<Flow>('start');
-  const [text, setText] = useState('Нужен автокран 25 тонн в Чебоксарах завтра к 9:00 на 8 часов, узкий въезд на площадку');
+  const [text, setText] = useState('');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [selected, setSelected] = useState<Proposal | null>(null);
   const [created, setCreated] = useState<Order | null>(null);
   const [busy, setBusy] = useState(false);
+  const [recording, setRecording] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const recordingTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (recordingTimer.current) window.clearTimeout(recordingTimer.current);
+  }, []);
 
   const parse = async (sourceText = text) => {
     setBusy(true); setError('');
@@ -178,29 +214,27 @@ function NewRequest({ meta, onCreated, notify }: { meta: Meta; onCreated: () => 
     finally { setBusy(false); }
   };
 
-  if (flow === 'start') return <section className="page new-page">
-    <div className="page-heading"><div><p className="eyebrow">Чувашская Республика</p><h1>Какая техника нужна?</h1><p>Начните с задачи. Экипаж уже включён в каждое предложение.</p></div></div>
-    <div className="fleet-visual"><img src="/assets/fleet.png" alt="Синтетический парк спецтехники" /><span>Синтетический демонстрационный каталог</span></div>
-    <div className="start-actions">
-      <button className="start-option featured" onClick={() => setFlow('describe')} data-testid="describe-start"><span className="option-icon"><Sparkles /></span><span><strong>Описать задачу</strong><small>Помощник подготовит черновик, вы всё проверите</small></span><ChevronRight /></button>
-      <button className="start-option" onClick={() => { setDraft(null); setNotice(''); setFlow('form'); }} data-testid="manual-start"><span className="option-icon neutral"><FileText /></span><span><strong>Заполнить вручную</strong><small>Короткая форма без ИИ</small></span><ChevronRight /></button>
-    </div>
-    <div className="category-strip">{meta.categories.map((category) => <span key={category.value}>{category.label}</span>)}</div>
-  </section>;
+  const startVoiceDemo = () => {
+    if (busy || recording) return;
+    setRecording(true); setError('');
+    recordingTimer.current = window.setTimeout(() => {
+      const voiceText = 'Нужен автокран 25 тонн в Чебоксарах завтра к 9:00 на 8 часов. Объект: ул. Калинина, 80, поднять плиты 8 т на 12 м, узкий въезд';
+      setText(voiceText); setRecording(false); void parse(voiceText);
+    }, 2_000);
+  };
 
-  if (flow === 'describe') return <section className="page narrow">
-    <Back onClick={() => setFlow('start')} />
-    <div className="page-heading"><div><p className="eyebrow">Шаг 1 из 3</p><h1>Опишите задачу</h1><p>Укажите технику, место, дату и ограничения обычным текстом.</p></div></div>
-    <label className="field"><span>Задача</span><textarea rows={7} value={text} maxLength={2000} onChange={(event) => setText(event.target.value)} data-testid="task-text" /><small>{text.length}/2000</small></label>
-    <div className="request-examples" aria-label="Примеры задач">
-      <p>Примеры задач</p>
-      <div>{requestExamples.map((example) => <button key={example.id} className="request-example" disabled={busy} onClick={() => { setText(example.text); void parse(example.text); }} data-testid={`request-example-${example.id}`}><Sparkles size={16} />{example.title}</button>)}</div>
-    </div>
+  if (flow === 'start') return <section className="page narrow ai-request-page">
+    <div className="page-heading"><div><p className="eyebrow">Новая заявка</p><h1>Какая техника нужна?</h1><p>Опишите задачу своими словами, а мы подберём подходящие варианты с экипажем.</p></div></div>
+    <form className={recording ? 'ai-composer recording' : 'ai-composer'} onSubmit={(event) => { event.preventDefault(); void parse(); }}>
+      <textarea aria-label="Опишите задачу" rows={5} value={text} maxLength={2000} disabled={busy || recording} onChange={(event) => setText(event.target.value)} placeholder="Например: нужен автокран для разгрузки плит завтра утром в Чебоксарах" data-testid="task-text" />
+      <div className="ai-composer-footer"><div className="voice-control"><button type="button" className="mic-button" aria-label="Записать голосом" title="Записать голосом" disabled={busy} onClick={startVoiceDemo}><Mic /></button>{recording && <span className="voice-wave" aria-label="Идёт запись"><i /><i /><i /><i /><i /></span>}<span>{recording ? 'Слушаю задачу...' : 'Можно написать или надиктовать'}</span></div><button className="send-button" type="submit" aria-label="Найти технику" title="Найти технику" disabled={busy || text.trim().length < 10} data-testid="parse-submit">{busy ? <LoaderCircle className="spin" /> : <Send />}</button></div>
+    </form>
     {error && <InlineError text={error} />}
-    <div className="sticky-actions"><button className="button primary wide" disabled={busy || text.trim().length < 10} onClick={() => void parse()} data-testid="parse-submit">{busy ? <LoaderCircle className="spin" /> : <Sparkles />}Подготовить черновик</button></div>
+    <div className="request-examples" aria-label="Примеры задач"><p>Попробуйте один из сценариев</p><div>{requestExamples.map((example) => <button type="button" key={example.id} className="request-example" disabled={busy || recording} onClick={() => { setText(example.text); void parse(example.text); }} data-testid={`request-example-${example.id}`}><Sparkles size={16} />{example.title}</button>)}</div></div>
+    <button className="manual-entry" onClick={() => { setDraft(null); setNotice(''); setFlow('form'); }} data-testid="manual-start"><FileText />Заполнить вручную</button>
   </section>;
 
-  if (flow === 'form') return <DraftForm meta={meta} draft={draft} notice={notice} busy={busy} error={error} onBack={() => setFlow(draft ? 'describe' : 'start')} onSubmit={async (fields) => {
+  if (flow === 'form') return <DraftForm meta={meta} draft={draft} notice={notice} busy={busy} error={error} onBack={() => setFlow('start')} onSubmit={async (fields) => {
     setBusy(true); setError('');
     try {
       const saved = draft ? await api.updateDraft(draft.id, fields) : await api.createDraft(fields);
@@ -213,11 +247,12 @@ function NewRequest({ meta, onCreated, notify }: { meta: Meta; onCreated: () => 
 
   if (flow === 'proposals') return <section className="page proposals-page">
     <Back onClick={() => setFlow('form')} />
-    <div className="page-heading row-heading"><div><p className="eyebrow">Шаг 3 из 3</p><h1>Подходящие предложения</h1><p>{proposals.length ? `Найдено ${proposals.length}. Можно выбрать любой вариант.` : 'Измените параметры и попробуйте снова.'}</p></div></div>
+    <div className="page-heading row-heading"><div><p className="eyebrow">Подбор завершён</p><h1>Подходящие предложения</h1><p>{proposals.length ? `Найдено ${proposals.length}. Можно выбрать любой вариант.` : 'Измените параметры и попробуйте снова.'}</p></div></div>
     {!proposals.length ? <Empty icon={<HardHat />} title="Подходящих вариантов нет" text={error || 'На выбранное время свободной техники нет.'} action={<button className="button secondary" onClick={() => setFlow('form')}>Изменить параметры</button>} /> : <div className="proposal-list">{proposals.map((item, index) => <article className="proposal" key={item.id}>
       <div className="proposal-image"><img src={item.imagePath} alt={item.title} /><span>#{index + 1}</span></div>
       <div className="proposal-body"><div className="proposal-title"><div><p className="supplier-name">{item.supplier.name}</p><h2>{item.title}</h2></div><strong className="price">{money(item.pricePerShift)}<small>/ смена</small></strong></div>
         <div className="facts"><span><Clock3 />Подача ~{item.responseMinutes} мин</span><span><Star className="star" />{item.supplier.rating} · {item.supplier.reviewCount} отзывов</span></div>
+        {!!specificationEntries(item.specifications, 4).length && <div className="spec-list">{specificationEntries(item.specifications, 4).map(([key, value]) => <span key={key}><b>{key}</b>{value}</span>)}</div>}
         <p className="why"><Check />{item.explanation}</p>
         <button className="button primary" onClick={() => setSelected(item)} data-testid={`select-proposal-${index}`}>Выбрать предложение</button>
       </div>
@@ -225,7 +260,7 @@ function NewRequest({ meta, onCreated, notify }: { meta: Meta; onCreated: () => 
     {selected && <ConfirmDialog proposal={selected} draft={draft!} busy={busy} error={error} onClose={() => setSelected(null)} onConfirm={() => void createOrder()} />}
   </section>;
 
-  return <section className="page narrow success-page"><div className="success-icon"><Check /></div><p className="eyebrow">Заявка отправлена</p><h1>{created?.publicNumber}</h1><p>Поставщик получил уведомление. Статус появится в разделе заявок.</p><div className="success-summary"><span>{created?.equipment.title}</span><strong>{created && money(created.pricePerShift)}</strong></div><button className="button primary wide" onClick={onCreated}>Открыть мои заявки</button><button className="button text" onClick={() => { setFlow('start'); setCreated(null); setDraft(null); }}>Создать ещё одну</button></section>;
+  return <section className="page narrow success-page"><div className="success-icon"><Check /></div><p className="eyebrow">Заявка отправлена</p><h1>{created?.publicNumber}</h1><p>Поставщик получил уведомление. Статус появится в разделе заявок.</p><div className="success-summary"><span>{created?.equipment.title}</span><strong>{created && money(created.pricePerShift)}</strong></div><button className="button primary wide" onClick={onCreated}>Открыть мои заявки</button><button className="button text" onClick={() => { setFlow('start'); setCreated(null); setDraft(null); setText(''); }}>Создать ещё одну</button></section>;
 }
 
 function DraftForm({ meta, draft, notice, busy, error, onBack, onSubmit }: { meta: Meta; draft: Draft | null; notice: string; busy: boolean; error: string; onBack: () => void; onSubmit: (fields: DraftFields) => Promise<void> }) {
@@ -233,23 +268,36 @@ function DraftForm({ meta, draft, notice, busy, error, onBack, onSubmit }: { met
   const [scheduledAt, setScheduledAt] = useState(draft ? toLocalInput(draft.scheduledAt) : tomorrowLocal());
   const [duration, setDuration] = useState(String(draft?.durationHours ?? 8));
   const [locality, setLocality] = useState(draft?.locality ?? 'Чебоксары');
+  const [siteAddress, setSiteAddress] = useState(draft?.siteAddress ?? '');
+  const [workVolume, setWorkVolume] = useState(draft?.workVolume ?? '');
   const [description, setDescription] = useState(draft?.workDescription ?? '');
   const [constraints, setConstraints] = useState(draft?.constraints ?? '');
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    void onSubmit({ category, scheduledAt: new Date(scheduledAt).toISOString(), durationHours: Number(duration), locality, workDescription: description, constraints: constraints || null });
+    void onSubmit({
+      category,
+      scheduledAt: new Date(scheduledAt).toISOString(),
+      durationHours: Number(duration),
+      locality,
+      siteAddress,
+      workVolume,
+      workDescription: description,
+      constraints: constraints || null
+    });
   };
 
-  return <section className="page narrow"><Back onClick={onBack} /><div className="page-heading"><div><p className="eyebrow">Шаг 2 из 3</p><h1>Проверьте заявку</h1><p>Поля можно изменить. Ничего не бронируется без вашего выбора.</p></div></div>
+  return <section className="page narrow"><Back onClick={onBack} /><div className="page-heading"><div><p className="eyebrow">Проверьте детали</p><h1>Заявка почти готова</h1><p>Поля можно изменить. Ничего не бронируется без вашего выбора.</p></div></div>
     {notice && <div className="notice"><Sparkles size={18} /><span>{notice}</span></div>}
     <form className="form-grid" onSubmit={submit} data-testid="draft-form">
       <label className="field full"><span>Категория техники *</span><select required value={category} onChange={(event) => setCategory(event.target.value)} data-testid="category"><option value="">Выберите категорию</option>{meta.categories.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
       <label className="field"><span>Дата и время *</span><input type="datetime-local" required value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} data-testid="scheduled-at" /></label>
       <label className="field"><span>Длительность, часов *</span><input type="number" min="1" max="168" required value={duration} onChange={(event) => setDuration(event.target.value)} data-testid="duration" /></label>
       <label className="field full"><span>Населённый пункт *</span><input list="localities" required minLength={2} value={locality} onChange={(event) => setLocality(event.target.value)} data-testid="locality" /><datalist id="localities">{meta.localities.map((item) => <option key={item}>{item}</option>)}</datalist></label>
+      <label className="field full"><span>Адрес или ориентир объекта *</span><input required minLength={3} maxLength={200} value={siteAddress} onChange={(event) => setSiteAddress(event.target.value)} placeholder="Например: ул. Калинина, 80, въезд со стороны склада" data-testid="site-address" /></label>
+      <label className="field full"><span>Объём работ *</span><input required minLength={2} maxLength={300} value={workVolume} onChange={(event) => setWorkVolume(event.target.value)} placeholder="Например: 8 т на 12 м, 40 м³ грунта, траншея 30 м" data-testid="work-volume" /></label>
       <label className="field full"><span>Что нужно сделать *</span><textarea rows={4} required minLength={10} maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} data-testid="work-description" /></label>
-      <label className="field full"><span>Ограничения</span><textarea rows={3} maxLength={500} placeholder="Например: узкий въезд, высота, тип грунта" value={constraints} onChange={(event) => setConstraints(event.target.value)} /></label>
+      <label className="field full"><span>Условия на объекте</span><textarea rows={3} maxLength={500} placeholder="Например: узкий въезд, грунт, высота ворот, ЛЭП рядом, нужен пропуск" value={constraints} onChange={(event) => setConstraints(event.target.value)} /></label>
       {error && <div className="full"><InlineError text={error} /></div>}
       <div className="sticky-actions full"><button className="button primary wide" disabled={busy} type="submit" data-testid="find-proposals">{busy ? <LoaderCircle className="spin" /> : <HardHat />}Найти предложения</button></div>
     </form>
@@ -260,7 +308,7 @@ function ConfirmDialog({ proposal, draft, busy, error, onClose, onConfirm }: { p
   return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><div className="modal">
     <button className="icon-button modal-close" aria-label="Закрыть" onClick={onClose}><X /></button><p className="eyebrow">Подтверждение</p><h2 id="confirm-title">Отправить заявку?</h2>
     <div className="confirm-equipment"><img src={proposal.imagePath} alt="" /><div><strong>{proposal.title}</strong><span>{proposal.supplier.name}</span></div></div>
-    <dl className="summary-list"><div><dt><CalendarClock />Дата</dt><dd>{draft.scheduledAt && dateTime(draft.scheduledAt)}</dd></div><div><dt><MapPin />Место</dt><dd>{draft.locality}</dd></div><div><dt><Clock3 />Длительность</dt><dd>{draft.durationHours} ч</dd></div><div><dt>Стоимость смены</dt><dd>{money(proposal.pricePerShift)}</dd></div></dl>
+    <dl className="summary-list"><div><dt><CalendarClock />Дата</dt><dd>{draft.scheduledAt && dateTime(draft.scheduledAt)}</dd></div><div><dt><MapPin />Место</dt><dd>{draft.locality}</dd></div><div><dt><Ruler />Объём</dt><dd>{draft.workVolume}</dd></div><div><dt><Clock3 />Длительность</dt><dd>{draft.durationHours} ч</dd></div><div><dt>Стоимость смены</dt><dd>{money(proposal.pricePerShift)}</dd></div></dl>
     <p className="muted">Это заявка поставщику, а не оплата. Диспетчер подтвердит доступность.</p>{error && <InlineError text={error} />}
     <button className="button primary wide" disabled={busy} onClick={onConfirm} data-testid="confirm-order">{busy ? <LoaderCircle className="spin" /> : <Send />}Отправить поставщику</button>
   </div></div>;
@@ -346,8 +394,8 @@ function OrderDetail({ order, user, onClose, onChanged }: { order: Order; user: 
 
   return <div className="drawer-backdrop" role="dialog" aria-modal="true"><aside className="drawer"><div className="drawer-head"><div><p className="eyebrow">{order.publicNumber}</p><h2>{order.equipment.title}</h2></div><button className="icon-button" aria-label="Закрыть" onClick={onClose}><X /></button></div>
     <div className={`detail-status ${order.status.toLowerCase()}`}><span>{statusLabels[order.status]}</span><small>{customer ? order.supplier.name : order.customer.name}</small></div>
-    <dl className="summary-list"><div><dt><CalendarClock />Дата</dt><dd>{dateTime(order.scheduledAt)}</dd></div><div><dt><MapPin />Место</dt><dd>{order.locality}</dd></div><div><dt><Clock3 />Длительность</dt><dd>{order.durationHours} ч</dd></div><div><dt>Смена</dt><dd>{money(order.pricePerShift)}</dd></div></dl>
-    <div className="detail-block"><h3>Задача</h3><p>{order.workDescription}</p>{order.constraints && <p className="constraint">Ограничение: {order.constraints}</p>}</div>
+    <dl className="summary-list"><div><dt><CalendarClock />Дата</dt><dd>{dateTime(order.scheduledAt)}</dd></div><div><dt><MapPin />Место</dt><dd>{order.siteAddress || order.locality}</dd></div><div><dt><Ruler />Объём</dt><dd>{order.workVolume || 'Не указан'}</dd></div><div><dt><Clock3 />Длительность</dt><dd>{order.durationHours} ч</dd></div><div><dt>Смена</dt><dd>{money(order.pricePerShift)}</dd></div></dl>
+    <div className="detail-block"><h3>Задача</h3><p>{order.workDescription}</p>{order.constraints && <p className="constraint">Условия: {order.constraints}</p>}</div>
     {order.declineReason && <InlineError text={`Причина: ${order.declineReason}`} />}
     {order.events && <div className="timeline"><h3>История статусов</h3>{order.events.map((event, index) => <div key={`${event.toStatus}-${index}`}><span /><p><strong>{statusLabels[event.toStatus]}</strong>{event.note && <em>{event.note}</em>}<small>{dateTime(event.createdAt)}</small></p></div>)}</div>}
     {error && <InlineError text={error} />}
@@ -377,8 +425,11 @@ function SupplierEquipmentList({ meta, notify }: { meta: Meta; notify: (message:
   const [description, setDescription] = useState('');
   const [pricePerShift, setPricePerShift] = useState('');
   const [responseMinutes, setResponseMinutes] = useState('45');
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [specifications, setSpecifications] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
+  const specLabels = useMemo(() => specificationFields[category], [category]);
 
   const load = useCallback(async () => {
     setBusy(true); setError('');
@@ -392,12 +443,24 @@ function SupplierEquipmentList({ meta, notify }: { meta: Meta; notify: (message:
     event.preventDefault();
     setBusy(true); setError('');
     try {
-      const result = await api.addSupplierEquipment({ category, title, description, pricePerShift: Number(pricePerShift), responseMinutes: Number(responseMinutes) });
+      const cleanedSpecs = Object.fromEntries(Object.entries(specifications).filter(([, value]) => value.trim()).map(([key, value]) => [key, value.trim()]));
+      const result = await api.addSupplierEquipment({ category, title, description, pricePerShift: Number(pricePerShift), responseMinutes: Number(responseMinutes), specifications: cleanedSpecs, imageDataUrl });
       setItems((current) => [result.equipment, ...current]);
-      setTitle(''); setDescription(''); setPricePerShift(''); setResponseMinutes('45'); setAdding(false);
+      setTitle(''); setDescription(''); setPricePerShift(''); setResponseMinutes('45'); setImageDataUrl(null); setSpecifications({}); setAdding(false);
       notify('Позиция добавлена в каталог');
     } catch (err) { setError(messageOf(err)); }
     finally { setBusy(false); }
+  };
+
+  const chooseCategory = (nextCategory: Category) => {
+    setCategory(nextCategory);
+    setSpecifications({});
+  };
+
+  const chooseImage = async (file: File | undefined) => {
+    if (!file) return;
+    try { setImageDataUrl(await readImage(file)); setError(''); }
+    catch (err) { setError(messageOf(err)); }
   };
 
   const removeEquipment = async (item: SupplierEquipment) => {
@@ -414,14 +477,16 @@ function SupplierEquipmentList({ meta, notify }: { meta: Meta; notify: (message:
   return <section className="page equipment-page"><div className="page-heading row-heading"><div><p className="eyebrow">Поставщик</p><h1>Моя техника</h1><p>Эти позиции видят заказчики при подборе техники.</p></div><button className="button primary desktop-action" onClick={() => setAdding(true)}><Plus />Добавить</button></div>
     {error && <InlineError text={error} />}
     {adding && <form className="form-grid equipment-form" onSubmit={addEquipment}>
-      <label className="field"><span>Категория *</span><select value={category} onChange={(event) => setCategory(event.target.value as Category)}>{meta.categories.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+      <label className="field"><span>Категория *</span><select value={category} onChange={(event) => chooseCategory(event.target.value as Category)}>{meta.categories.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
       <label className="field"><span>Название *</span><input required minLength={2} maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Например, автокран 25 т" /></label>
+      <label className="field full equipment-photo-field"><span>Фото техники</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void chooseImage(event.target.files?.[0])} />{imageDataUrl ? <img src={imageDataUrl} alt="" /> : <small><ImagePlus size={16} />JPG, PNG или WebP до 3 МБ</small>}</label>
       <label className="field full"><span>Описание *</span><textarea required rows={3} minLength={5} maxLength={500} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Ключевые особенности, экипаж, условия работы" /></label>
+      {specLabels.map((label) => <label className="field" key={label}><span>{label}</span><input maxLength={120} value={specifications[label] ?? ''} onChange={(event) => setSpecifications((current) => ({ ...current, [label]: event.target.value }))} placeholder={label === 'Дополнительно' ? 'Экипаж, топливо, минимальная смена' : ''} /></label>)}
       <label className="field"><span>Цена за смену, ₽ *</span><input required type="number" min="1000" max="1000000" value={pricePerShift} onChange={(event) => setPricePerShift(event.target.value)} /></label>
       <label className="field"><span>Подача, минут *</span><input required type="number" min="10" max="1440" value={responseMinutes} onChange={(event) => setResponseMinutes(event.target.value)} /></label>
       <div className="equipment-form-actions full"><button className="button secondary" type="button" disabled={busy} onClick={() => setAdding(false)}>Отмена</button><button className="button primary" disabled={busy} type="submit">{busy ? <LoaderCircle className="spin" /> : <Plus />}Добавить в каталог</button></div>
     </form>}
-    {busy && !items.length ? <Spinner label="Загружаем технику" /> : !items.length ? <Empty icon={<Truck />} title="Пока нет позиций" text="Добавьте первую единицу техники, чтобы она стала доступна заказчикам." action={<button className="button primary" onClick={() => setAdding(true)}><Plus />Добавить технику</button>} /> : <div className="equipment-list">{items.map((item) => <article key={item.id} className="equipment-row"><div><p className="eyebrow">{categoryLabels[item.category]}</p><h2>{item.title}</h2><p>{item.description}</p><div className="equipment-facts"><span>{money(item.pricePerShift)} / смена</span><span>Подача ~{item.responseMinutes} мин</span></div></div><button className="icon-button danger-icon" title="Убрать из каталога" aria-label={`Убрать ${item.title} из каталога`} disabled={busy} onClick={() => void removeEquipment(item)}><Trash2 /></button></article>)}</div>}
+    {busy && !items.length ? <Spinner label="Загружаем технику" /> : !items.length ? <Empty icon={<Truck />} title="Пока нет позиций" text="Добавьте первую единицу техники, чтобы она стала доступна заказчикам." action={<button className="button primary" onClick={() => setAdding(true)}><Plus />Добавить технику</button>} /> : <div className="equipment-list">{items.map((item) => <article key={item.id} className="equipment-row"><img src={item.imagePath} alt="" /><div><p className="eyebrow">{categoryLabels[item.category]}</p><h2>{item.title}</h2><p>{item.description}</p><div className="equipment-facts"><span>{money(item.pricePerShift)} / смена</span><span>Подача ~{item.responseMinutes} мин</span></div>{!!specificationEntries(item.specifications).length && <div className="spec-list compact">{specificationEntries(item.specifications).map(([key, value]) => <span key={key}><b>{key}</b>{value}</span>)}</div>}</div><button className="icon-button danger-icon" title="Убрать из каталога" aria-label={`Убрать ${item.title} из каталога`} disabled={busy} onClick={() => void removeEquipment(item)}><Trash2 /></button></article>)}</div>}
   </section>;
 }
 

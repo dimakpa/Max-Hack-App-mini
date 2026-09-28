@@ -36,6 +36,8 @@ describe('local LLM structured response parser', () => {
     scheduledAt: '2026-09-19T09:00:00+03:00',
     durationHours: 8,
     locality: 'Чебоксары, ул. Калинина, 109',
+    siteAddress: 'ул. Калинина, 109',
+    workVolume: '12 плит по 2 т',
     workDescription: 'Поднять плиты на второй этаж',
     constraints: 'Узкий въезд'
   };

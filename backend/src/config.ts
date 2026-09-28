@@ -15,7 +15,8 @@ const schema = z.object({
   OLLAMA_URL: z.string().url().default('http://localhost:11434'),
   OLLAMA_MODEL: z.string().default('qwen3:4b'),
   OPENAI_COMPATIBLE_URL: z.string().url().default('http://localhost:11435/v1'),
-  OPENAI_COMPATIBLE_MODEL: z.string().default('mlx-community/Qwen3-8B-4bit')
+  OPENAI_COMPATIBLE_MODEL: z.string().default('mlx-community/Qwen3-8B-4bit'),
+  UPLOAD_DIR: z.string().default('/app/uploads')
 });
 
 export type AppConfig = z.infer<typeof schema>;

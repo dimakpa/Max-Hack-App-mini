@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
+import { resolve } from 'node:path';
 import { ZodError } from 'zod';
 import { apiRouter } from './routes.js';
 import { authenticate } from './auth.js';
@@ -15,7 +16,12 @@ export function createApp() {
   if (config.TRUST_PROXY_HOPS > 0) app.set('trust proxy', config.TRUST_PROXY_HOPS);
   app.use(helmet());
   app.use(cors({ origin: config.FRONTEND_ORIGIN.split(',').map((item) => item.trim()), credentials: false }));
-  app.use(express.json({ limit: '32kb' }));
+  app.use('/uploads', express.static(resolve(config.UPLOAD_DIR), {
+    immutable: true,
+    maxAge: '30d',
+    index: false
+  }));
+  app.use(express.json({ limit: '5mb' }));
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
   app.get('/ready', async (_req, res) => {

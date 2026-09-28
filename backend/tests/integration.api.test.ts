@@ -14,6 +14,8 @@ async function readyDraft(category = 'MOBILE_CRANE', locality = 'Чебокса�
     scheduledAt: '2028-05-16T06:00:00.000Z',
     durationHours: 8,
     locality,
+    siteAddress: 'ул. Калинина, 109',
+    workVolume: '12 плит по 2 т',
     workDescription: 'Поднять строительные материалы на площадке',
     constraints: 'Узкий въезд'
   });
