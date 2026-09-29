@@ -13,6 +13,8 @@ export interface Draft {
   durationHours: number | null;
   locality: string | null;
   siteAddress: string | null;
+  siteLatitude: number | null;
+  siteLongitude: number | null;
   workVolume: string | null;
   workDescription: string | null;
   constraints: string | null;
@@ -41,6 +43,8 @@ export interface Order {
   durationHours: number;
   locality: string;
   siteAddress: string | null;
+  siteLatitude: number | null;
+  siteLongitude: number | null;
   workVolume: string | null;
   workDescription: string;
   constraints: string | null;
@@ -57,6 +61,16 @@ export interface Order {
   callbackRequestStatus?: 'REQUESTED' | 'ACKNOWLEDGED' | null;
   incomingCallbackRequestStatus?: 'REQUESTED' | 'ACKNOWLEDGED' | null;
   events?: Array<{ fromStatus: OrderStatus | null; toStatus: OrderStatus; note: string | null; createdAt: string }>;
+  attachments?: DraftAttachment[];
+}
+
+export interface DraftAttachment {
+  id: string;
+  kind: 'PHOTO' | 'PDF';
+  filePath: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
 }
 export interface Notification {
   id: string;

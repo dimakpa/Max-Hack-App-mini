@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS request_drafts (
   duration_hours integer CHECK (duration_hours BETWEEN 1 AND 168),
   locality varchar(120),
   site_address varchar(200),
+  site_latitude numeric(9,6),
+  site_longitude numeric(9,6),
   work_volume varchar(300),
   work_description varchar(1000),
   constraints_text varchar(500),
@@ -81,6 +83,8 @@ CREATE TABLE IF NOT EXISTS orders (
   duration_hours integer NOT NULL,
   locality varchar(120) NOT NULL,
   site_address varchar(200),
+  site_latitude numeric(9,6),
+  site_longitude numeric(9,6),
   work_volume varchar(300),
   work_description varchar(1000) NOT NULL,
   constraints_text varchar(500),
@@ -147,6 +151,20 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS notifications_outbox_idx ON notifications(status, created_at);
+
+CREATE TABLE IF NOT EXISTS request_attachments (
+  id uuid PRIMARY KEY,
+  draft_id uuid NOT NULL REFERENCES request_drafts(id) ON DELETE CASCADE,
+  order_id uuid REFERENCES orders(id) ON DELETE SET NULL,
+  kind varchar(10) NOT NULL CHECK (kind IN ('PHOTO', 'PDF')),
+  file_path varchar(255) NOT NULL,
+  file_name varchar(160) NOT NULL,
+  content_type varchar(80) NOT NULL,
+  size_bytes integer NOT NULL CHECK (size_bytes > 0),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS request_attachments_draft_idx ON request_attachments(draft_id, created_at);
+CREATE INDEX IF NOT EXISTS request_attachments_order_idx ON request_attachments(order_id, created_at);
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
   name varchar(255) PRIMARY KEY,

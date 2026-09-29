@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { Router } from 'express';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { raw, Router } from 'express';
 import type pg from 'pg';
 import { parseRequestText } from './ai.js';
 import { requireRole } from './auth.js';
@@ -11,6 +11,7 @@ import { ApiError, assertFound } from './errors.js';
 import { rankEquipment } from './ranking.js';
 import {
   createOrderSchema,
+  callbackAcknowledgeSchema,
   draftFieldsSchema,
   reviewSchema,
   rollbackSchema,
@@ -38,6 +39,12 @@ const imageTypes = new Map([
   ['image/png', 'png'],
   ['image/webp', 'webp']
 ]);
+const requestAttachmentTypes: Map<string, { extension: string; kind: 'PHOTO' | 'PDF' }> = new Map([
+  ['image/jpeg', { extension: 'jpg', kind: 'PHOTO' }],
+  ['image/png', { extension: 'png', kind: 'PHOTO' }],
+  ['image/webp', { extension: 'webp', kind: 'PHOTO' }],
+  ['application/pdf', { extension: 'pdf', kind: 'PDF' }]
+] as const);
 
 function user(req: Parameters<Parameters<typeof apiRouter.get>[1]>[0]) {
   return assertFound(req.authUser, 'Пользователь не авторизован');
@@ -72,6 +79,55 @@ async function saveEquipmentImage(imageDataUrl: string | null | undefined, fallb
   const fileName = `${randomUUID()}.${ext}`;
   await writeFile(join(config.UPLOAD_DIR, 'equipment', fileName), data, { flag: 'wx' });
   return `/uploads/equipment/${fileName}`;
+}
+
+function serializeAttachment(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    filePath: row.file_path,
+    fileName: row.file_name,
+    contentType: row.content_type,
+    sizeBytes: row.size_bytes
+  };
+}
+
+async function attachmentsForDraft(draftId: string) {
+  const result = await pool.query(
+    'SELECT id, kind, file_path, file_name, content_type, size_bytes FROM request_attachments WHERE draft_id=$1 ORDER BY created_at',
+    [draftId]
+  );
+  return result.rows.map(serializeAttachment);
+}
+
+async function attachmentsForOrder(orderId: string) {
+  const result = await pool.query(
+    'SELECT id, kind, file_path, file_name, content_type, size_bytes FROM request_attachments WHERE order_id=$1 ORDER BY created_at',
+    [orderId]
+  );
+  return result.rows.map(serializeAttachment);
+}
+
+function safeAttachmentName(value: string | undefined, fallback: string): string {
+  if (!value) return fallback;
+  try {
+    return decodeURIComponent(value).replace(/[^A-Za-z0-9._ -]/g, '_').slice(0, 160) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function saveRequestAttachment(data: Buffer, contentType: string): Promise<{ kind: string; filePath: string }> {
+  const descriptor = requestAttachmentTypes.get(contentType);
+  if (!descriptor) throw new ApiError(422, 'INVALID_ATTACHMENT', 'Можно прикрепить JPG, PNG, WebP или PDF');
+  const maxBytes = descriptor.kind === 'PHOTO' ? 3_000_000 : 5_000_000;
+  if (!data.length || data.length > maxBytes) {
+    throw new ApiError(422, 'INVALID_ATTACHMENT_SIZE', descriptor.kind === 'PHOTO' ? 'Фото должно быть до 3 МБ' : 'PDF должен быть до 5 МБ');
+  }
+  const fileName = `${randomUUID()}.${descriptor.extension}`;
+  await mkdir(join(config.UPLOAD_DIR, 'requests'), { recursive: true });
+  await writeFile(join(config.UPLOAD_DIR, 'requests', fileName), data, { flag: 'wx' });
+  return { kind: descriptor.kind, filePath: `/uploads/requests/${fileName}` };
 }
 
 apiRouter.get('/meta', async (_req, res) => {
@@ -150,6 +206,36 @@ apiRouter.post('/supplier/equipment', requireRole('DISPATCHER'), async (req, res
   } });
 });
 
+apiRouter.patch('/supplier/equipment/:id', requireRole('DISPATCHER'), async (req, res) => {
+  const body = supplierEquipmentSchema.parse(req.body);
+  const authUser = user(req);
+  const currentResult = await pool.query(
+    `SELECT image_path FROM equipment WHERE id=$1 AND supplier_id=$2 AND is_available=true`,
+    [req.params.id, authUser.supplierId]
+  );
+  const current = assertFound(currentResult.rows[0], 'Техника не найдена');
+  const imagePath = body.imageDataUrl ? await saveEquipmentImage(body.imageDataUrl) : current.image_path;
+  const result = await pool.query(
+    `UPDATE equipment SET category=$1, title=$2, description=$3, price_per_shift=$4,
+       response_minutes=$5, image_path=$6, specifications=$7::jsonb
+     WHERE id=$8 AND supplier_id=$9 AND is_available=true
+     RETURNING id, category, title, description, price_per_shift, response_minutes, image_path, specifications`,
+    [body.category, body.title, body.description, body.pricePerShift, body.responseMinutes,
+      imagePath, JSON.stringify(body.specifications), req.params.id, authUser.supplierId]
+  );
+  const equipment = assertFound(result.rows[0], 'Техника не найдена');
+  res.json({ equipment: {
+    id: equipment.id,
+    category: equipment.category,
+    title: equipment.title,
+    description: equipment.description,
+    pricePerShift: equipment.price_per_shift,
+    responseMinutes: equipment.response_minutes,
+    imagePath: equipment.image_path,
+    specifications: equipment.specifications
+  } });
+});
+
 apiRouter.delete('/supplier/equipment/:id', requireRole('DISPATCHER'), async (req, res) => {
   const authUser = user(req);
   const activeOrders = await pool.query(
@@ -178,10 +264,11 @@ apiRouter.post('/drafts/parse', requireRole('CUSTOMER'), async (req, res) => {
   const result = await pool.query(
     `INSERT INTO request_drafts(
        id, customer_id, source_text, category, scheduled_at, duration_hours, locality,
-       site_address, work_volume, work_description, constraints_text, parser_provider
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+       site_address, site_latitude, site_longitude, work_volume, work_description, constraints_text, parser_provider
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
     [id, user(req).id, body.text, fields.category, fields.scheduledAt, fields.durationHours,
-      fields.locality, fields.siteAddress, fields.workVolume, fields.workDescription, fields.constraints, parsed.provider]
+      fields.locality, fields.siteAddress, fields.siteLatitude ?? null, fields.siteLongitude ?? null,
+      fields.workVolume, fields.workDescription, fields.constraints, parsed.provider]
   );
   res.status(201).json({ draft: serializeDraft(result.rows[0]), fallback: parsed.fallback, notice: parsed.notice });
 });
@@ -191,10 +278,11 @@ apiRouter.post('/drafts', requireRole('CUSTOMER'), async (req, res) => {
   const result = await pool.query(
     `INSERT INTO request_drafts(
        id, customer_id, category, scheduled_at, duration_hours, locality,
-       site_address, work_volume, work_description, constraints_text, parser_provider, status
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'manual','READY') RETURNING *`,
+       site_address, site_latitude, site_longitude, work_volume, work_description, constraints_text, parser_provider, status
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'manual','READY') RETURNING *`,
     [randomUUID(), user(req).id, fields.category, fields.scheduledAt, fields.durationHours,
-      fields.locality, fields.siteAddress, fields.workVolume, fields.workDescription, fields.constraints ?? null]
+      fields.locality, fields.siteAddress, fields.siteLatitude ?? null, fields.siteLongitude ?? null,
+      fields.workVolume, fields.workDescription, fields.constraints ?? null]
   );
   res.status(201).json({ draft: serializeDraft(result.rows[0]) });
 });
@@ -203,12 +291,50 @@ apiRouter.put('/drafts/:id', requireRole('CUSTOMER'), async (req, res) => {
   const fields = draftFieldsSchema.parse(req.body);
   const result = await pool.query(
     `UPDATE request_drafts SET category=$1, scheduled_at=$2, duration_hours=$3, locality=$4,
-       site_address=$5, work_volume=$6, work_description=$7, constraints_text=$8, status='READY', updated_at=now()
-     WHERE id=$9 AND customer_id=$10 AND status <> 'ORDERED' RETURNING *`,
+       site_address=$5, site_latitude=$6, site_longitude=$7, work_volume=$8, work_description=$9, constraints_text=$10, status='READY', updated_at=now()
+     WHERE id=$11 AND customer_id=$12 AND status <> 'ORDERED' RETURNING *`,
     [fields.category, fields.scheduledAt, fields.durationHours, fields.locality,
-      fields.siteAddress, fields.workVolume, fields.workDescription, fields.constraints ?? null, req.params.id, user(req).id]
+      fields.siteAddress, fields.siteLatitude ?? null, fields.siteLongitude ?? null,
+      fields.workVolume, fields.workDescription, fields.constraints ?? null, req.params.id, user(req).id]
   );
   res.json({ draft: serializeDraft(assertFound(result.rows[0], 'Черновик не найден или уже отправлен')) });
+});
+
+apiRouter.get('/drafts/:id/attachments', requireRole('CUSTOMER'), async (req, res) => {
+  const draft = await pool.query('SELECT 1 FROM request_drafts WHERE id=$1 AND customer_id=$2', [req.params.id, user(req).id]);
+  assertFound(draft.rows[0], 'Черновик не найден');
+  res.json({ attachments: await attachmentsForDraft(String(req.params.id)) });
+});
+
+apiRouter.post('/drafts/:id/attachments', requireRole('CUSTOMER'), raw({ type: () => true, limit: '5mb' }), async (req, res) => {
+  const draft = await pool.query(
+    "SELECT id FROM request_drafts WHERE id=$1 AND customer_id=$2 AND status <> 'ORDERED'",
+    [req.params.id, user(req).id]
+  );
+  assertFound(draft.rows[0], 'Черновик не найден или уже отправлен');
+  const contentType = req.get('content-type')?.split(';')[0]?.toLowerCase() ?? '';
+  const data = req.body;
+  if (!Buffer.isBuffer(data)) throw new ApiError(422, 'INVALID_ATTACHMENT', 'Файл не получен');
+  const saved = await saveRequestAttachment(data, contentType);
+  const result = await pool.query(
+    `INSERT INTO request_attachments(id, draft_id, kind, file_path, file_name, content_type, size_bytes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, kind, file_path, file_name, content_type, size_bytes`,
+    [randomUUID(), req.params.id, saved.kind, saved.filePath, safeAttachmentName(req.get('x-file-name'), `attachment.${saved.kind === 'PDF' ? 'pdf' : 'jpg'}`), contentType, data.length]
+  );
+  res.status(201).json({ attachment: serializeAttachment(result.rows[0]) });
+});
+
+apiRouter.delete('/drafts/:draftId/attachments/:id', requireRole('CUSTOMER'), async (req, res) => {
+  const result = await pool.query(
+    `DELETE FROM request_attachments a
+     USING request_drafts d
+     WHERE a.id=$1 AND a.draft_id=$2 AND d.id=a.draft_id AND d.customer_id=$3 AND d.status <> 'ORDERED'
+     RETURNING a.file_path`,
+    [req.params.id, req.params.draftId, user(req).id]
+  );
+  const attachment = assertFound(result.rows[0], 'Вложение не найдено');
+  await rm(join(config.UPLOAD_DIR, 'requests', basename(attachment.file_path)), { force: true });
+  res.status(204).end();
 });
 
 apiRouter.get('/drafts/:id/proposals', requireRole('CUSTOMER'), async (req, res) => {
@@ -303,13 +429,15 @@ apiRouter.post('/orders', requireRole('CUSTOMER'), async (req, res) => {
     await client.query(
       `INSERT INTO orders(id, public_number, customer_id, supplier_id, equipment_id, draft_id,
         client_request_id, status, category, scheduled_at, duration_hours, locality,
-        site_address, work_volume, work_description, constraints_text, price_per_shift)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'NEW',$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        site_address, site_latitude, site_longitude, work_volume, work_description, constraints_text, price_per_shift)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'NEW',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
       [orderId, publicNumber, authUser.id, equipment.supplier_id, equipment.id, draft.id,
         body.idempotencyKey, draft.category, draft.scheduled_at, draft.duration_hours,
-        draft.locality, draft.site_address, draft.work_volume, draft.work_description, draft.constraints_text, equipment.price_per_shift]
+        draft.locality, draft.site_address, draft.site_latitude, draft.site_longitude,
+        draft.work_volume, draft.work_description, draft.constraints_text, equipment.price_per_shift]
     );
     await client.query('UPDATE request_drafts SET status=\'ORDERED\', updated_at=now() WHERE id=$1', [draft.id]);
+    await client.query('UPDATE request_attachments SET order_id=$1 WHERE draft_id=$2 AND order_id IS NULL', [orderId, draft.id]);
     await client.query(
       `INSERT INTO order_events(id, order_id, actor_user_id, from_status, to_status, note)
        VALUES ($1,$2,$3,NULL,'NEW','Заявка отправлена поставщику')`,
@@ -360,6 +488,7 @@ apiRouter.get('/orders/:id', async (req, res) => {
   res.json({
     order: {
       ...serializeOrder(order),
+      attachments: await attachmentsForOrder(order.id),
       allowedTransitions: allowedTransitions(order.status, authUser.role),
       allowedRollback,
       canRequestCallback: contactableStatuses.includes(order.status),
@@ -486,6 +615,7 @@ apiRouter.post('/orders/:id/callback', requireRole('CUSTOMER', 'DISPATCHER'), as
 });
 
 apiRouter.post('/orders/:id/callback/acknowledge', requireRole('CUSTOMER', 'DISPATCHER'), async (req, res) => {
+  const body = callbackAcknowledgeSchema.parse(req.body ?? {});
   const authUser = user(req);
   let replayed = false;
   await inTransaction(async (client) => {
@@ -509,9 +639,11 @@ apiRouter.post('/orders/:id/callback/acknowledge', requireRole('CUSTOMER', 'DISP
       client,
       requestRow.requester_user_id,
       'CALLBACK_ACKNOWLEDGED',
-      `${authUser.role === 'CUSTOMER' ? 'Заказчик' : 'Поставщик'} подтвердил обмен профилями по заявке ${order.public_number}. Откройте карточку контакта и напишите в MAX.`,
+      body.phone
+        ? `${authUser.role === 'CUSTOMER' ? 'Заказчик' : 'Поставщик'} передал номер для связи по заявке ${order.public_number}: ${body.phone}`
+        : `${authUser.role === 'CUSTOMER' ? 'Заказчик' : 'Поставщик'} подтвердил обмен профилями по заявке ${order.public_number}. Откройте карточку контакта и напишите в MAX.`,
       order.id,
-      contactMaxUserId ? `contact:${contactMaxUserId}` : `order_${order.id}`
+      !body.phone && contactMaxUserId ? `contact:${contactMaxUserId}` : `order_${order.id}`
     );
   });
   res.json({ status: 'ACKNOWLEDGED', replayed });

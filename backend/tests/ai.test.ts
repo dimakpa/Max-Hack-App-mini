@@ -28,6 +28,14 @@ describe('deterministic Russian request parser', () => {
   ])('parses the %s demo scenario without an LLM', (_name, text, category, locality, durationHours) => {
     expect(parseWithMock(text, new Date('2026-09-18T08:00:00Z'))).toMatchObject({ category, locality, durationHours });
   });
+
+  it('extracts the full street address from the voice demo text', () => {
+    const result = parseWithMock(
+      'Нужен автокран 25 тонн в Чебоксарах завтра к 9:00 на 8 часов. Объект: ул. Калинина, 80, поднять плиты 8 т на 12 м, узкий въезд',
+      new Date('2026-09-18T08:00:00Z')
+    );
+    expect(result.siteAddress).toBe('улица Калинина, 80');
+  });
 });
 
 describe('local LLM structured response parser', () => {

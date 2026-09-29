@@ -151,7 +151,7 @@ describe('API customer and dispatcher flow', () => {
   it('lets a dispatcher manage only their own catalog', async () => {
     const catalog = await request(app).get('/api/supplier/equipment').set(dispatcher);
     expect(catalog.status).toBe(200);
-    expect(catalog.body.equipment).toHaveLength(10);
+    expect(catalog.body.equipment).toHaveLength(3);
     expect((await request(app).get('/api/supplier/equipment').set(customer)).status).toBe(403);
 
     const created = await request(app).post('/api/supplier/equipment').set(dispatcher).send({
@@ -165,10 +165,10 @@ describe('API customer and dispatcher flow', () => {
     expect(created.body.equipment.title).toBe('Трактор для теста');
 
     const afterCreate = await request(app).get('/api/supplier/equipment').set(dispatcher);
-    expect(afterCreate.body.equipment).toHaveLength(11);
+    expect(afterCreate.body.equipment).toHaveLength(4);
     expect((await request(app).delete(`/api/supplier/equipment/${created.body.equipment.id}`).set({ 'x-demo-user': 'dispatcher-b' })).status).toBe(404);
     expect((await request(app).delete(`/api/supplier/equipment/${created.body.equipment.id}`).set(dispatcher)).status).toBe(204);
     const afterDelete = await request(app).get('/api/supplier/equipment').set(dispatcher);
-    expect(afterDelete.body.equipment).toHaveLength(10);
+    expect(afterDelete.body.equipment).toHaveLength(3);
   });
 });

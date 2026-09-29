@@ -1,4 +1,4 @@
-import type { Category, DemoUser, Draft, Meta, Notification, Order, Proposal, SupplierEquipment, User } from './types';
+import type { Category, DemoUser, Draft, DraftAttachment, Meta, Notification, Order, Proposal, SupplierEquipment, User } from './types';
 
 const base = import.meta.env.VITE_API_BASE ?? '/api';
 const demoEnabled = import.meta.env.VITE_DEMO_AUTH === 'true';
@@ -27,6 +27,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+async function upload<T>(path: string, file: File): Promise<T> {
+  const headers = new Headers({ 'content-type': file.type, 'x-file-name': encodeURIComponent(file.name) });
+  if (window.WebApp?.initData) headers.set('x-max-init-data', window.WebApp.initData);
+  else if (demoEnabled) headers.set('x-demo-user', demoAlias);
+  const response = await fetch(`${base}${path}`, { method: 'POST', headers, body: file });
+  const body = await response.json().catch(() => ({})) as { error?: { code?: string; message?: string } };
+  if (!response.ok) throw new ApiClientError(response.status, body.error?.code ?? 'REQUEST_FAILED', body.error?.message ?? 'Не удалось загрузить файл');
+  return body as T;
+}
+
 export const api = {
   meta: () => request<Meta>('/meta'),
   me: () => request<{ user: User }>('/me'),
@@ -41,11 +51,15 @@ export const api = {
   setStatus: (id: string, status: string, reason?: string) => request<{ order: Order }>(`/orders/${id}/status`, { method: 'POST', body: JSON.stringify({ status, reason }) }),
   rollbackStatus: (id: string, reason: string) => request<{ order: Order }>(`/orders/${id}/status/rollback`, { method: 'POST', body: JSON.stringify({ reason }) }),
   callback: (id: string) => request<{ status: string; replayed: boolean }>(`/orders/${id}/callback`, { method: 'POST' }),
-  acknowledgeCallback: (id: string) => request<{ status: string; replayed: boolean }>(`/orders/${id}/callback/acknowledge`, { method: 'POST' }),
+  acknowledgeCallback: (id: string, phone?: string) => request<{ status: string; replayed: boolean }>(`/orders/${id}/callback/acknowledge`, { method: 'POST', body: JSON.stringify(phone ? { phone } : {}) }),
+  draftAttachments: (id: string) => request<{ attachments: DraftAttachment[] }>(`/drafts/${id}/attachments`),
+  uploadDraftAttachment: (id: string, file: File) => upload<{ attachment: DraftAttachment }>(`/drafts/${id}/attachments`, file),
+  removeDraftAttachment: (draftId: string, id: string) => request<void>(`/drafts/${draftId}/attachments/${id}`, { method: 'DELETE' }),
   review: (id: string, rating: number, text: string) => request<{ review: unknown }>(`/orders/${id}/review`, { method: 'POST', body: JSON.stringify({ rating, text }) }),
   supplierApplication: (body: { companyName: string; region: string; contact: string; categories: string[] }) => request<{ application: { id: string; status: string; companyName: string } }>('/supplier-applications', { method: 'POST', body: JSON.stringify(body) }),
   supplierEquipment: () => request<{ equipment: SupplierEquipment[] }>('/supplier/equipment'),
   addSupplierEquipment: (body: { category: Category; title: string; description: string; pricePerShift: number; responseMinutes: number; specifications: Record<string, string>; imageDataUrl: string | null }) => request<{ equipment: SupplierEquipment }>('/supplier/equipment', { method: 'POST', body: JSON.stringify(body) }),
+  updateSupplierEquipment: (id: string, body: { category: Category; title: string; description: string; pricePerShift: number; responseMinutes: number; specifications: Record<string, string>; imageDataUrl: string | null }) => request<{ equipment: SupplierEquipment }>(`/supplier/equipment/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   removeSupplierEquipment: (id: string) => request<void>(`/supplier/equipment/${id}`, { method: 'DELETE' }),
   notifications: () => request<{ notifications: Notification[] }>('/notifications')
 };
@@ -56,6 +70,8 @@ export interface DraftFields {
   durationHours: number;
   locality: string;
   siteAddress: string;
+  siteLatitude: number | null;
+  siteLongitude: number | null;
   workVolume: string;
   workDescription: string;
   constraints: string | null;

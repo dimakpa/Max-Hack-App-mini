@@ -8,6 +8,8 @@ test('customer to dispatcher to one review', async ({ page, isMobile }) => {
   await page.getByTestId('scheduled-at').fill('2029-06-18T09:00');
   await page.getByTestId('duration').fill('8');
   await page.getByTestId('locality').fill('Чебоксары');
+  await page.getByTestId('site-address').fill('ул. Калинина, 80');
+  await page.getByTestId('work-volume').fill('Поднять 8 тонн на второй этаж');
   await page.getByTestId('work-description').fill('Поднять строительные материалы на второй этаж');
   await page.getByTestId('find-proposals').click();
   await expect(page.getByRole('heading', { name: 'Подходящие предложения' })).toBeVisible();
@@ -16,7 +18,7 @@ test('customer to dispatcher to one review', async ({ page, isMobile }) => {
   await expect(page.getByText('Заявка отправлена', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Открыть мои заявки' }).click();
   await page.getByTestId('order-NEW').first().click();
-  await expect(page.getByText('Новая', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog').locator('.detail-status span')).toHaveText('Новая');
   await page.getByRole('button', { name: 'Закрыть' }).click();
 
   await page.getByTestId('role-switcher').selectOption('dispatcher-a');
@@ -27,7 +29,10 @@ test('customer to dispatcher to one review', async ({ page, isMobile }) => {
   await page.getByTestId('role-switcher').selectOption('customer');
   await page.getByRole('button', { name: 'Мои заявки' }).click();
   await page.getByTestId('order-NEW').first().click();
-  await page.getByTestId('acknowledge-callback').click();
+  await page.getByRole('button', { name: 'Поделиться номером' }).click();
+  await page.getByPlaceholder('+7 999 123-45-67').fill('+7 999 123-45-67');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Подтвердить' }).click();
   await page.getByRole('button', { name: 'Закрыть' }).click();
   await page.getByTestId('role-switcher').selectOption('dispatcher-a');
   await page.getByTestId('order-NEW').first().click();
@@ -53,7 +58,6 @@ test('customer to dispatcher to one review', async ({ page, isMobile }) => {
 test('mock request examples prepare a deterministic draft', async ({ page, isMobile }) => {
   test.skip(Boolean(isMobile), 'The full scenario is checked on desktop; mobile layout has a dedicated test.');
   await page.goto('/');
-  await page.getByTestId('describe-start').click();
   await expect(page.getByTestId('request-example-crane')).toBeVisible();
   await expect(page.getByTestId('request-example-dump-truck')).toBeVisible();
   await expect(page.getByTestId('request-example-tractor')).toBeVisible();
@@ -61,6 +65,7 @@ test('mock request examples prepare a deterministic draft', async ({ page, isMob
   await expect(page.getByTestId('category')).toHaveValue('DUMP_TRUCK');
   await expect(page.getByTestId('locality')).toHaveValue('Новочебоксарск');
   await expect(page.getByTestId('duration')).toHaveValue('8');
+  await page.getByTestId('site-address').fill('Промзона у Восточного шоссе');
   await page.getByTestId('find-proposals').click();
   await expect(page.getByRole('heading', { name: 'Подходящие предложения' })).toBeVisible();
 });

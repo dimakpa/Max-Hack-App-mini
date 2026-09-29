@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 test('new request screen is usable without overlap', async ({ page }, testInfo) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Какая техника нужна?' })).toBeVisible();
-  await expect(page.getByTestId('describe-start')).toBeVisible();
+  await expect(page.getByTestId('task-text')).toBeVisible();
   await expect(page.getByTestId('manual-start')).toBeVisible();
   mkdirSync('qa/screenshots', { recursive: true });
   await page.screenshot({ path: `qa/screenshots/${testInfo.project.name}-new-request.png`, fullPage: true });

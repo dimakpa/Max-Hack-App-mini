@@ -86,6 +86,16 @@ function detectDate(text: string, now: Date): string | null {
   return null;
 }
 
+function detectSiteAddress(text: string): string | null {
+  const street = text.match(/(?:адрес|объект|ориентир)?\s*[:\-]?\s*(?:ул\.?|улица)\s+([А-Яа-яЁёA-Za-z0-9 .-]{2,80})(?:,\s*([0-9][А-Яа-яЁёA-Za-z0-9/-]*))?/i);
+  if (street?.[1]) {
+    const streetName = street[1].trim().replace(/\s+/g, ' ');
+    const house = street[2]?.trim();
+    return `улица ${streetName}${house ? `, ${house}` : ''}`;
+  }
+  return text.match(/\b(?:адрес|объект|ориентир)\s*[:\-]\s*([^,.]{4,120})/i)?.[1]?.trim() ?? null;
+}
+
 export function parseWithMock(text: string, now = new Date()): DraftFields {
   const localityPatterns: Array<[RegExp, string]> = [
     [/новочебоксарск/i, 'Новочебоксарск'],
@@ -98,13 +108,12 @@ export function parseWithMock(text: string, now = new Date()): DraftFields {
   const shift = /смен/i.test(text) ? 8 : null;
   const constraints = text.match(/(узк(?:ий|ий проезд|ий въезд)[^,.]*|ограниченн(?:ый|ая)[^,.]*|вылет[^,.]*|грузоподъ[её]мност[^,.]*)/i)?.[0] ?? null;
   const workVolume = text.match(/(\d+(?:[,.]\d+)?\s*(?:т|тонн|м3|м³|куб|кубов|м\b|метр|метров|рейс|рейсов|соток|га)[^,.]*)/i)?.[0] ?? null;
-  const siteAddress = text.match(/(?:адрес|объект|ориентир|ул\.?|улица)\s*[:\-]?\s*([^,.]{4,120})/i)?.[1]?.trim() ?? null;
   return {
     category: detectCategory(text),
     scheduledAt: detectDate(text, now),
     durationHours: durationMatch ? Math.min(168, Number(durationMatch[1])) : shift,
     locality,
-    siteAddress,
+    siteAddress: detectSiteAddress(text),
     workVolume,
     workDescription: text.trim() || null,
     constraints

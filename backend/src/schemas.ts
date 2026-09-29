@@ -9,6 +9,8 @@ export const draftFieldsSchema = z.object({
   durationHours: z.number().int().min(1).max(168),
   locality: z.string().trim().min(2).max(120),
   siteAddress: z.string().trim().min(3).max(200),
+  siteLatitude: z.number().min(-90).max(90).nullable().optional(),
+  siteLongitude: z.number().min(-180).max(180).nullable().optional(),
   workVolume: z.string().trim().min(2).max(300),
   workDescription: z.string().trim().min(10).max(1000),
   constraints: z.string().trim().max(500).nullable().optional()
@@ -18,6 +20,10 @@ export const createOrderSchema = z.object({
   draftId: z.string().uuid(),
   equipmentId: z.string().uuid(),
   idempotencyKey: z.string().uuid()
+});
+
+export const callbackAcknowledgeSchema = z.object({
+  phone: z.string().trim().regex(/^\+?[0-9()\-\s]{7,32}$/, 'Укажите номер в привычном формате').optional().nullable()
 });
 
 export const statusSchema = z.object({

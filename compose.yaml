@@ -35,11 +35,14 @@ services:
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
       OPENAI_COMPATIBLE_URL: ${OPENAI_COMPATIBLE_URL:-http://host.docker.internal:11435/v1}
       OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-mlx-community/Qwen3-8B-4bit}
+      UPLOAD_DIR: /app/uploads
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "${BACKEND_BIND_ADDRESS:-127.0.0.1}:3001:3001"
+    volumes:
+      - techzakaz_uploads:/app/uploads
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3001/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 5s
@@ -92,3 +95,4 @@ services:
 
 volumes:
   techzakaz_db:
+  techzakaz_uploads:

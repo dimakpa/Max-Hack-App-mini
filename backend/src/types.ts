@@ -20,6 +20,8 @@ export interface DraftFields {
   durationHours: number | null;
   locality: string | null;
   siteAddress: string | null;
+  siteLatitude?: number | null;
+  siteLongitude?: number | null;
   workVolume: string | null;
   workDescription: string | null;
   constraints: string | null;
