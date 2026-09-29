@@ -15,7 +15,7 @@
 
 ## Задача 1: JSON-разбор
 
-Ожидаемая схема: `category`, `scheduledAt`, `durationHours`, `locality`, `workDescription`, `constraints`. Неизвестные поля равны `null`.
+Ожидаемая схема: `category`, `scheduledAt`, `durationHours`, `locality`, `siteAddress`, `workVolume`, `workDescription`, `constraints`. Неизвестные поля равны `null`.
 
 Фиксировать:
 
@@ -49,4 +49,3 @@
 | Qwen3 8B quant | | | | | | | |
 
 До заполнения таблицы нельзя утверждать, что конкретная модель стабильно работает на Mac с 24 ГБ памяти.
-

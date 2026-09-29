@@ -1,0 +1,162 @@
+openapi: 3.1.0
+info:
+  title: 'ТехЗаказ API'
+  version: 1.0.0
+  description: 'API MVP подбора спецтехники. Каталог и аккаунты в demo-режиме синтетические.'
+servers:
+  - url: https://max-ai.5.63.152.157.sslip.io/api
+    description: 'Публичный origin MVP'
+security:
+  - MaxInitData: []
+paths:
+  /meta:
+    get:
+      summary: 'Метаданные формы и режима'
+      responses: { '200': { description: 'Список категорий, населённых пунктов и флаги режима', content: { application/json: { schema: { $ref: '#/components/schemas/MetaResponse' } } } } }
+  /me:
+    get:
+      summary: 'Текущий пользователь'
+      responses: { '200': { description: 'Профиль текущей роли', content: { application/json: { schema: { type: object, required: [user], properties: { user: { $ref: '#/components/schemas/User' } } } } } }, '401': { $ref: '#/components/responses/Error' } }
+  /demo-users:
+    get:
+      summary: 'Демонстрационные роли'
+      description: 'Доступно только при DEMO_AUTH=true.'
+      responses: { '200': { description: 'Роли без паролей' }, '404': { $ref: '#/components/responses/Error' } }
+  /drafts/parse:
+    post:
+      summary: 'Создать черновик из текста'
+      security: [{ DemoUser: [] }, { MaxInitData: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string, minLength: 10, maxLength: 2000 } } } } } }
+      responses: { '201': { description: 'Черновик создан', content: { application/json: { schema: { type: object, required: [draft, fallback], properties: { draft: { $ref: '#/components/schemas/Draft' }, fallback: { type: boolean }, notice: { type: [string, 'null'] } } } } } }, '422': { $ref: '#/components/responses/Error' } }
+  /drafts:
+    post:
+      summary: 'Создать ручной черновик'
+      requestBody: { $ref: '#/components/requestBodies/DraftFields' }
+      responses: { '201': { description: 'Черновик создан' }, '422': { $ref: '#/components/responses/Error' } }
+  /drafts/{draftId}:
+    put:
+      summary: 'Обновить черновик'
+      parameters: [{ $ref: '#/components/parameters/DraftId' }]
+      requestBody: { $ref: '#/components/requestBodies/DraftFields' }
+      responses: { '200': { description: 'Черновик обновлён' }, '404': { $ref: '#/components/responses/Error' } }
+  /drafts/{draftId}/attachments:
+    get:
+      summary: 'Получить материалы черновика'
+      parameters: [{ $ref: '#/components/parameters/DraftId' }]
+      responses: { '200': { description: 'Материалы черновика', content: { application/json: { schema: { type: object, required: [attachments], properties: { attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } } } } } } } }
+    post:
+      summary: 'Прикрепить фото объекта или PDF ТЗ'
+      description: 'До четырёх материалов на черновик: JPG/PNG/WebP до 3 МБ, PDF до 5 МБ. Имя передаётся в x-file-name.'
+      parameters: [{ $ref: '#/components/parameters/DraftId' }, { name: x-file-name, in: header, required: false, schema: { type: string, maxLength: 160 } }]
+      requestBody:
+        required: true
+        content:
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/png: { schema: { type: string, format: binary } }
+          image/webp: { schema: { type: string, format: binary } }
+          application/pdf: { schema: { type: string, format: binary } }
+      responses: { '201': { description: 'Материал сохранён', content: { application/json: { schema: { type: object, required: [attachment], properties: { attachment: { $ref: '#/components/schemas/Attachment' } } } } } }, '422': { $ref: '#/components/responses/Error' } }
+  /drafts/{draftId}/attachments/{attachmentId}:
+    delete:
+      summary: 'Удалить материал черновика'
+      parameters: [{ $ref: '#/components/parameters/DraftId' }, { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '204': { description: 'Материал удалён' }, '404': { $ref: '#/components/responses/Error' } }
+  /drafts/{draftId}/proposals:
+    get:
+      summary: 'Получить подходящие варианты'
+      parameters: [{ $ref: '#/components/parameters/DraftId' }]
+      responses: { '200': { description: 'До пяти предложений или причина отсутствия', content: { application/json: { schema: { type: object, required: [proposals], properties: { proposals: { type: array, items: { $ref: '#/components/schemas/Proposal' } }, reason: { type: [string, 'null'] } } } } } }, '409': { $ref: '#/components/responses/Error' } }
+  /orders:
+    get:
+      summary: 'Список заявок текущей стороны'
+      parameters: [{ name: status, in: query, schema: { $ref: '#/components/schemas/OrderStatus' } }]
+      responses: { '200': { description: 'Заявки заказчика или поставщика' } }
+    post:
+      summary: 'Отправить заявку поставщику'
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [draftId, equipmentId, idempotencyKey], properties: { draftId: { type: string, format: uuid }, equipmentId: { type: string, format: uuid }, idempotencyKey: { type: string, format: uuid } } } } } }
+      responses: { '201': { description: 'Заявка создана' }, '200': { description: 'Повтор идемпотентного запроса' }, '409': { $ref: '#/components/responses/Error' } }
+  /orders/{orderId}:
+    get:
+      summary: 'Заявка, история и доступные действия'
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      responses: { '200': { description: 'Детали заявки' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+  /orders/{orderId}/status:
+    post:
+      summary: 'Изменить статус заявки'
+      description: 'Только диспетчер своего поставщика; допустимые переходы валидируются на сервере.'
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [status], properties: { status: { $ref: '#/components/schemas/OrderStatus' }, reason: { type: string, minLength: 3, maxLength: 500 } } } } } }
+      responses: { '200': { description: 'Статус обновлён' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } }
+  /orders/{orderId}/status/rollback:
+    post:
+      summary: 'Откатить последний допустимый статус'
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 500 } } } } } }
+      responses: { '200': { description: 'Статус откачен' }, '409': { $ref: '#/components/responses/Error' } }
+  /orders/{orderId}/callback:
+    post:
+      summary: 'Запросить обратный звонок'
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      responses: { '201': { description: 'Запрос звонка создан' }, '409': { $ref: '#/components/responses/Error' } }
+  /orders/{orderId}/callback/acknowledge:
+    post:
+      summary: 'Подтвердить обработку запроса звонка'
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      responses: { '200': { description: 'Запрос звонка подтверждён' }, '404': { $ref: '#/components/responses/Error' } }
+  /orders/{orderId}/review:
+    post:
+      summary: 'Оставить отзыв после завершения'
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [rating, text], properties: { rating: { type: integer, minimum: 1, maximum: 5 }, text: { type: string, minLength: 3, maxLength: 500 } } } } } }
+      responses: { '201': { description: 'Отзыв создан' }, '409': { $ref: '#/components/responses/Error' } }
+  /supplier/equipment:
+    get:
+      summary: 'Список собственной доступной техники'
+      responses: { '200': { description: 'Только техника поставщика текущего диспетчера' }, '403': { $ref: '#/components/responses/Error' } }
+    post:
+      summary: 'Добавить технику'
+      requestBody: { $ref: '#/components/requestBodies/Equipment' }
+      responses: { '201': { description: 'Карточка создана' }, '422': { $ref: '#/components/responses/Error' } }
+  /supplier/equipment/{equipmentId}:
+    patch:
+      summary: 'Изменить свою карточку техники'
+      parameters: [{ $ref: '#/components/parameters/EquipmentId' }]
+      requestBody: { $ref: '#/components/requestBodies/Equipment' }
+      responses: { '200': { description: 'Карточка обновлена' }, '404': { $ref: '#/components/responses/Error' } }
+    delete:
+      summary: 'Скрыть свою карточку техники'
+      parameters: [{ $ref: '#/components/parameters/EquipmentId' }]
+      responses: { '204': { description: 'Карточка скрыта' }, '409': { $ref: '#/components/responses/Error' } }
+  /supplier-applications:
+    post:
+      summary: 'Оставить заявку поставщика на подключение'
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [companyName, region, contact, categories], properties: { companyName: { type: string, minLength: 2 }, region: { type: string, minLength: 2 }, contact: { type: string, minLength: 3 }, categories: { type: array, minItems: 1, maxItems: 4, items: { $ref: '#/components/schemas/Category' } } } } } } }
+      responses: { '201': { description: 'Заявка создана' } }
+  /notifications:
+    get:
+      summary: 'Уведомления текущего пользователя'
+      responses: { '200': { description: 'Список уведомлений' } }
+components:
+  securitySchemes:
+    MaxInitData: { type: apiKey, in: header, name: x-max-init-data, description: 'Подписанные данные MAX WebApp.' }
+    DemoUser: { type: apiKey, in: header, name: x-demo-user, description: 'Только локальный demo: customer или dispatcher-a/b/c.' }
+  parameters:
+    DraftId: { name: draftId, in: path, required: true, schema: { type: string, format: uuid } }
+    OrderId: { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+    EquipmentId: { name: equipmentId, in: path, required: true, schema: { type: string, format: uuid } }
+  requestBodies:
+    DraftFields: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DraftFields' } } } }
+    Equipment: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/EquipmentInput' } } } }
+  responses:
+    Error: { description: 'Контролируемая ошибка', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    Category: { type: string, enum: [MOBILE_CRANE, TRACTOR, DUMP_TRUCK, BACKHOE_LOADER] }
+    OrderStatus: { type: string, enum: [NEW, CONFIRMED, IN_PROGRESS, COMPLETED, DECLINED, CANCELLED] }
+    User: { type: object, properties: { id: { type: string, format: uuid }, displayName: { type: string }, role: { type: string, enum: [CUSTOMER, DISPATCHER] }, supplierId: { type: [string, 'null'], format: uuid } } }
+    MetaResponse: { type: object, required: [categories, localities, demoMode, syntheticData], properties: { categories: { type: array }, localities: { type: array, items: { type: string } }, demoMode: { type: boolean }, syntheticData: { type: boolean } } }
+    DraftFields: { type: object, required: [category, scheduledAt, durationHours, locality, siteAddress, workVolume, workDescription], properties: { category: { $ref: '#/components/schemas/Category' }, scheduledAt: { type: string, format: date-time }, durationHours: { type: integer, minimum: 1, maximum: 168 }, locality: { type: string, minLength: 2, maxLength: 120 }, siteAddress: { type: string, minLength: 3, maxLength: 200 }, siteLatitude: { type: [number, 'null'], minimum: -90, maximum: 90 }, siteLongitude: { type: [number, 'null'], minimum: -180, maximum: 180 }, workVolume: { type: string, minLength: 2, maxLength: 300 }, workDescription: { type: string, minLength: 10, maxLength: 1000 }, constraints: { type: [string, 'null'], maxLength: 500 } } }
+    Draft: { allOf: [{ $ref: '#/components/schemas/DraftFields' }, { type: object, properties: { id: { type: string, format: uuid }, status: { type: string } } }] }
+    Proposal: { type: object, properties: { id: { type: string, format: uuid }, title: { type: string }, pricePerShift: { type: integer }, responseMinutes: { type: integer }, imagePath: { type: string }, specifications: { type: object }, explanation: { type: string }, supplier: { type: object } } }
+    Attachment: { type: object, required: [id, kind, filePath, fileName, contentType, sizeBytes], properties: { id: { type: string, format: uuid }, kind: { type: string, enum: [PHOTO, PDF] }, filePath: { type: string }, fileName: { type: string }, contentType: { type: string }, sizeBytes: { type: integer } } }
+    EquipmentInput: { type: object, required: [category, title, description, pricePerShift, responseMinutes], properties: { category: { $ref: '#/components/schemas/Category' }, title: { type: string, minLength: 2, maxLength: 120 }, description: { type: string, minLength: 5, maxLength: 500 }, pricePerShift: { type: integer, minimum: 1000, maximum: 1000000 }, responseMinutes: { type: integer, minimum: 10, maximum: 1440 }, specifications: { type: object, additionalProperties: { type: string } }, imageDataUrl: { type: [string, 'null'], maxLength: 4500000, description: 'JPG/PNG/WebP data URL, decoded size up to 3 MB.' } } }
+    Error: { type: object, properties: { error: { type: object, properties: { code: { type: string }, message: { type: string } } } } }

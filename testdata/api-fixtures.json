@@ -1,0 +1,30 @@
+{
+  "disclaimer": "Данные синтетические и предназначены только для проверки MVP.",
+  "demoHeaders": {
+    "customer": { "x-demo-user": "customer" },
+    "dispatcherA": { "x-demo-user": "dispatcher-a" },
+    "dispatcherB": { "x-demo-user": "dispatcher-b" },
+    "dispatcherC": { "x-demo-user": "dispatcher-c" }
+  },
+  "requestText": "Нужен самосвал КамАЗ в Новочебоксарске завтра к 8:00 на смену, вывезти грунт с участка",
+  "manualDraft": {
+    "category": "DUMP_TRUCK",
+    "scheduledAt": "2030-06-15T08:00:00.000Z",
+    "durationHours": 8,
+    "locality": "Новочебоксарск",
+    "siteAddress": "ул. Советская, 10",
+    "workVolume": "Вывоз грунта: ориентировочно 80 м³",
+    "workDescription": "Вывезти грунт с участка после земляных работ",
+    "constraints": "Подъезд со стороны двора"
+  },
+  "equipment": [
+    { "id": "10000000-0000-4000-8000-000000000101", "title": "Автокран 16 т", "category": "MOBILE_CRANE" },
+    { "id": "10000000-0000-4000-8000-000000000107", "title": "Самосвал 15 т", "category": "DUMP_TRUCK" },
+    { "id": "10000000-0000-4000-8000-000000000109", "title": "Экскаватор-погрузчик", "category": "BACKHOE_LOADER" }
+  ],
+  "notes": [
+    "Идентификатор черновика берётся из ответа POST /api/drafts/parse или POST /api/drafts.",
+    "Для POST /api/orders используйте новый UUID в idempotencyKey.",
+    "Для смены статуса выберите заявку, которая принадлежит поставщику текущего диспетчера."
+  ]
+}

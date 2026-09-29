@@ -34,7 +34,7 @@ describe('API customer and dispatcher flow', () => {
     const proposals = await request(app).get(`/api/drafts/${draft.id}/proposals`).set(customer);
     expect(proposals.status).toBe(200);
     expect(proposals.body.proposals).toHaveLength(4);
-    expect(proposals.body.proposals[0].supplier.name).toBe('Поставщик А');
+    expect(proposals.body.proposals[0].supplier.name).toBe('Волга Кран');
 
     const payload = { draftId: draft.id, equipmentId: proposals.body.proposals[0].id, idempotencyKey: randomUUID() };
     const created = await request(app).post('/api/orders').set(customer).send(payload);

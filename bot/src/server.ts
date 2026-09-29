@@ -9,7 +9,10 @@ const env = z.object({
   PORT: z.coerce.number().default(3002),
   DATABASE_URL: z.string().url(),
   MAX_BOT_TOKEN: z.string().optional().default(''),
-  MAX_WEBHOOK_SECRET: z.string().regex(/^[A-Za-z0-9_-]{5,256}$/).optional().default(''),
+  MAX_WEBHOOK_SECRET: z.preprocess(
+    (value) => value === '' ? undefined : value,
+    z.string().regex(/^[A-Za-z0-9_-]{5,256}$/).optional().default('')
+  ),
   PUBLIC_APP_URL: z.string().url().default('http://localhost:8080'),
   PUBLIC_API_URL: z.string().url().default('http://localhost:3001')
 }).parse(process.env);

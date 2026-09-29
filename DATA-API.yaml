@@ -1,0 +1,131 @@
+version: '1.0'
+solution: 'ТехЗаказ'
+team: 'ТехЗаказ'
+baseUrl: 'https://max-ai.5.63.152.157.sslip.io/api'
+healthUrl: 'https://max-ai.5.63.152.157.sslip.io/health'
+authentication:
+  production:
+    header: x-max-init-data
+    description: 'Подписанные данные MAX WebApp; проверяются сервером.'
+  demo:
+    enabledWhen: DEMO_AUTH=true
+    header: x-demo-user
+    values: [customer, dispatcher-a, dispatcher-b, dispatcher-c]
+    passwords: 'Не используются'
+testData:
+  file: testdata/api-fixtures.json
+  note: 'Все поставщики, отзывы, рейтинги и техника синтетические.'
+checks:
+  - name: 'health'
+    method: GET
+    path: /health
+    role: none
+    expectedStatus: 200
+    request: { headers: {} }
+    expectedResponse: { contentType: text/plain, exactBody: ok }
+  - name: 'metadata'
+    method: GET
+    path: /api/meta
+    role: any
+    expectedStatus: 200
+    request: { headers: { x-demo-user: customer } }
+    expectedResponse:
+      contentType: application/json
+      requiredFields: [categories, localities, demoMode, syntheticData]
+  - name: 'parse request'
+    method: POST
+    path: /api/drafts/parse
+    role: customer
+    expectedStatus: 201
+    request:
+      headers: { x-demo-user: customer, Content-Type: application/json }
+      body: { text: 'Нужен самосвал КамАЗ в Новочебоксарске завтра к 8:00 на смену, вывезти грунт с участка' }
+    expectedResponse:
+      contentType: application/json
+      requiredFields: [draft, fallback, notice]
+      requiredDraftFields: [id, category, scheduledAt, durationHours, locality, siteAddress, workVolume, workDescription]
+  - name: 'proposals'
+    method: GET
+    path: /api/drafts/{draftId}/proposals
+    role: customer
+    expectedStatus: 200
+    request:
+      pathParameters: { draftId: 'UUID из ответа parse request' }
+      headers: { x-demo-user: customer }
+    expectedResponse:
+      contentType: application/json
+      requiredFields: [proposals, reason]
+      proposalFieldsWhenNonEmpty: [id, title, category, pricePerShift, responseMinutes, supplier, explanation]
+  - name: 'upload request attachment'
+    method: POST
+    path: /api/drafts/{draftId}/attachments
+    role: customer
+    expectedStatus: 201
+    request:
+      pathParameters: { draftId: 'UUID черновика текущего заказчика' }
+      headers: { x-demo-user: customer, Content-Type: image/jpeg, x-file-name: object.jpg }
+      body: 'Бинарное содержимое JPG до 3 МБ; PDF допускается до 5 МБ.'
+    expectedResponse:
+      contentType: application/json
+      requiredFields: [attachment]
+      requiredAttachmentFields: [id, kind, filePath, fileName, contentType, sizeBytes]
+  - name: 'create order'
+    method: POST
+    path: /api/orders
+    role: customer
+    expectedStatus: 201
+    request:
+      headers: { x-demo-user: customer, Content-Type: application/json }
+      body: { draftId: 'UUID из parse request', equipmentId: 'UUID из первого proposals', idempotencyKey: 'новый UUID' }
+    expectedResponse:
+      contentType: application/json
+      requiredFields: [order, replayed]
+      requiredOrderFields: [id, publicNumber, status, equipment, supplier]
+  - name: 'order status'
+    method: POST
+    path: /api/orders/{orderId}/status
+    role: dispatcher-a|dispatcher-b|dispatcher-c
+    expectedStatus: 200
+    request:
+      pathParameters: { orderId: 'UUID заявки поставщика текущего диспетчера' }
+      headers: { x-demo-user: 'dispatcher поставщика заявки', Content-Type: application/json }
+      body: { status: CONFIRMED, reason: 'Техника доступна' }
+    expectedResponse:
+      contentType: application/json
+      requiredFields: [order]
+      requiredOrderFields: [id, publicNumber, status, equipment, supplier]
+  - name: 'own equipment'
+    method: GET
+    path: /api/supplier/equipment
+    role: dispatcher-a|dispatcher-b|dispatcher-c
+    expectedStatus: 200
+    request: { headers: { x-demo-user: dispatcher-b } }
+    expectedResponse:
+      contentType: application/json
+      requiredFields: [equipment]
+      equipmentFields: [id, category, title, description, pricePerShift, responseMinutes, imagePath, specifications]
+methods:
+  - { method: GET, path: /api/meta, role: any, expectedStatus: 200 }
+  - { method: GET, path: /api/me, role: any, expectedStatus: 200 }
+  - { method: GET, path: /api/demo-users, role: any, expectedStatus: 200 }
+  - { method: GET, path: /api/supplier/equipment, role: dispatcher, expectedStatus: 200 }
+  - { method: POST, path: /api/supplier/equipment, role: dispatcher, expectedStatus: 201 }
+  - { method: PATCH, path: '/api/supplier/equipment/{id}', role: dispatcher, expectedStatus: 200 }
+  - { method: DELETE, path: '/api/supplier/equipment/{id}', role: dispatcher, expectedStatus: 204 }
+  - { method: POST, path: /api/drafts/parse, role: customer, expectedStatus: 201 }
+  - { method: POST, path: /api/drafts, role: customer, expectedStatus: 201 }
+  - { method: PUT, path: '/api/drafts/{id}', role: customer, expectedStatus: 200 }
+  - { method: GET, path: '/api/drafts/{id}/attachments', role: customer, expectedStatus: 200 }
+  - { method: POST, path: '/api/drafts/{id}/attachments', role: customer, expectedStatus: 201 }
+  - { method: DELETE, path: '/api/drafts/{draftId}/attachments/{id}', role: customer, expectedStatus: 204 }
+  - { method: GET, path: '/api/drafts/{id}/proposals', role: customer, expectedStatus: 200 }
+  - { method: POST, path: /api/orders, role: customer, expectedStatus: 201 }
+  - { method: GET, path: /api/orders, role: customer|dispatcher, expectedStatus: 200 }
+  - { method: GET, path: '/api/orders/{id}', role: customer|dispatcher, expectedStatus: 200 }
+  - { method: POST, path: '/api/orders/{id}/status', role: dispatcher, expectedStatus: 200 }
+  - { method: POST, path: '/api/orders/{id}/status/rollback', role: dispatcher, expectedStatus: 200 }
+  - { method: POST, path: '/api/orders/{id}/callback', role: customer|dispatcher, expectedStatus: 201 }
+  - { method: POST, path: '/api/orders/{id}/callback/acknowledge', role: customer|dispatcher, expectedStatus: 200 }
+  - { method: POST, path: '/api/orders/{id}/review', role: customer, expectedStatus: 201 }
+  - { method: POST, path: /api/supplier-applications, role: any, expectedStatus: 201 }
+  - { method: GET, path: /api/notifications, role: any, expectedStatus: 200 }
