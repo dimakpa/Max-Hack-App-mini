@@ -375,7 +375,7 @@ function OrderDetail({ order, user, onClose, onChanged }: { order: Order; user: 
   };
   const acknowledgeCallback = async () => {
     setBusy(true); setError('');
-    try { await api.acknowledgeCallback(order.id); await onChanged('Связь подтверждена'); }
+    try { await api.acknowledgeCallback(order.id); await onChanged('Профиль MAX отправлен собеседнику'); }
     catch (err) { setError(messageOf(err)); }
     finally { setBusy(false); }
   };
@@ -400,7 +400,7 @@ function OrderDetail({ order, user, onClose, onChanged }: { order: Order; user: 
     {order.events && <div className="timeline"><h3>История статусов</h3>{order.events.map((event, index) => <div key={`${event.toStatus}-${index}`}><span /><p><strong>{statusLabels[event.toStatus]}</strong>{event.note && <em>{event.note}</em>}<small>{dateTime(event.createdAt)}</small></p></div>)}</div>}
     {error && <InlineError text={error} />}
     <div className="drawer-actions">
-      {order.incomingCallbackRequestStatus === 'REQUESTED' && <div className="contact-request"><span><PhoneCall />{customer ? 'Поставщик хочет уточнить детали' : 'Заказчик просит связаться'}</span><button className="button secondary" disabled={busy} onClick={() => void acknowledgeCallback()} data-testid="acknowledge-callback"><Check />Уже связались</button></div>}
+      {order.incomingCallbackRequestStatus === 'REQUESTED' && <div className="contact-request"><span><PhoneCall />{customer ? 'Поставщик хочет уточнить детали' : 'Заказчик просит связаться'}</span><button className="button secondary" disabled={busy} onClick={() => void acknowledgeCallback()} data-testid="acknowledge-callback"><Check />Поделиться профилем MAX</button></div>}
       {!customer && order.allowedTransitions?.includes('CONFIRMED') && <button className="button primary" disabled={busy} onClick={() => void transition('CONFIRMED')} data-testid="confirm-status"><Check />Подтвердить</button>}
       {order.canRequestCallback && <button className="button secondary" disabled={busy || order.callbackRequestStatus === 'REQUESTED'} onClick={() => void callback()} data-testid="callback-request"><PhoneCall />{order.callbackRequestStatus === 'REQUESTED' ? 'Запрос на связь отправлен' : customer ? 'Связаться с поставщиком' : 'Связаться с заказчиком'}</button>}
       {!customer && order.allowedTransitions?.includes('DECLINED') && <button className="button danger-text" disabled={busy} onClick={() => setDeclining(true)}>Отклонить</button>}

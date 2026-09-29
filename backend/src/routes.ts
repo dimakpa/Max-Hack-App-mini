@@ -503,13 +503,15 @@ apiRouter.post('/orders/:id/callback/acknowledge', requireRole('CUSTOMER', 'DISP
     const requestRow = assertFound(callback.rows[0], 'Активный запрос на связь не найден');
     if (requestRow.status === 'ACKNOWLEDGED') { replayed = true; return; }
     await client.query("UPDATE callback_requests SET status='ACKNOWLEDGED' WHERE id=$1", [requestRow.id]);
+    const contact = await client.query('SELECT max_user_id FROM users WHERE id=$1', [authUser.id]);
+    const contactMaxUserId = contact.rows[0]?.max_user_id ? String(contact.rows[0].max_user_id) : null;
     await enqueue(
       client,
       requestRow.requester_user_id,
       'CALLBACK_ACKNOWLEDGED',
-      `${authUser.role === 'CUSTOMER' ? 'Заказчик' : 'Поставщик'} подтвердил связь по заявке ${order.public_number}.`,
+      `${authUser.role === 'CUSTOMER' ? 'Заказчик' : 'Поставщик'} подтвердил обмен профилями по заявке ${order.public_number}. Откройте карточку контакта и напишите в MAX.`,
       order.id,
-      `order_${order.id}`
+      contactMaxUserId ? `contact:${contactMaxUserId}` : `order_${order.id}`
     );
   });
   res.json({ status: 'ACKNOWLEDGED', replayed });
