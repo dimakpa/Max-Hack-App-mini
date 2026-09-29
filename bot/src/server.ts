@@ -13,7 +13,6 @@ const env = z.object({
     (value) => value === '' ? undefined : value,
     z.string().regex(/^[A-Za-z0-9_-]{5,256}$/).optional().default('')
   ),
-  PUBLIC_APP_URL: z.string().url().default('http://localhost:8080'),
   PUBLIC_API_URL: z.string().url().default('http://localhost:3001')
 }).parse(process.env);
 
@@ -66,13 +65,13 @@ app.post('/webhook', async (req, res) => {
 Мы помогаем быстро найти спецтехнику с экипажем для работ в Чувашии.
 
 Как начать:
-1. Откройте приложение ниже.
+1. Откройте Mini App штатной кнопкой в профиле бота.
 2. Опишите задачу своими словами или заполните форму.
 3. Проверьте детали и выберите подходящую технику.
 
 После отправки заявки поставщик получит уведомление. В разделе «Мои заявки» можно следить за статусом и подтвердить обмен контактами в MAX.`,
       deepLinkPayload: null
-    }, { token: env.MAX_BOT_TOKEN, publicAppUrl: env.PUBLIC_APP_URL });
+    }, { token: env.MAX_BOT_TOKEN });
   }
   res.status(200).json({ ok: true });
 });
@@ -97,7 +96,7 @@ async function processOutbox(): Promise<void> {
         maxUserId: notification.max_user_id ? String(notification.max_user_id) : null,
         text: notification.text,
         deepLinkPayload: notification.deep_link_payload
-      }, { token: env.MAX_BOT_TOKEN, publicAppUrl: env.PUBLIC_APP_URL });
+      }, { token: env.MAX_BOT_TOKEN });
       await pool.query(
         `UPDATE notifications SET status=$1, delivered_at=now(), last_error=NULL WHERE id=$2`,
         [result.mode === 'MAX' ? 'DELIVERED_MAX' : 'DELIVERED_DRY_RUN', notification.id]

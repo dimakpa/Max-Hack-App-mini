@@ -7,7 +7,7 @@ describe('notification delivery adapter', () => {
   it('uses deterministic dry-run when token is absent', async () => {
     await expect(deliver(
       { maxUserId: null, text: 'Тест', deepLinkPayload: 'order_public-id' },
-      { token: '', publicAppUrl: 'http://localhost:8080' }
+      { token: '' }
     )).resolves.toEqual({ mode: 'DRY_RUN' });
   });
 
@@ -24,10 +24,25 @@ describe('notification delivery adapter', () => {
     );
 
     expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toMatchObject({
-      attachments: [
-        { type: 'contact', payload: { contact_id: '200' } },
-        { type: 'inline_keyboard' }
-      ]
+      attachments: [{ type: 'contact', payload: { contact_id: '200' } }]
+    });
+  });
+
+  it('does not add an external Mini App link to notification messages', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ mid: 'message-id' })
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await deliver(
+      { maxUserId: '100', text: 'Новая заявка', deepLinkPayload: 'order_public-id' },
+      { token: 'token' }
+    );
+
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
+      text: 'Новая заявка',
+      attachments: []
     });
   });
 });
